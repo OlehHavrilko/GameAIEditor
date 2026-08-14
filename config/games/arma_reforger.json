@@ -1,0 +1,85 @@
+{
+  "game_id": "arma_reforger",
+  "title": "Arma Reforger",
+  "platform": ["Windows 11", "PC"],
+  "genre": ["tactical", "simulation", "FPS", "co-op"],
+  "description": "Arma Reforger gameplay profile optimized for tactical combat highlights and cinematic storytelling.",
+  "interesting_events": [
+    "firefight",
+    "enemy_contact",
+    "kill",
+    "multi_kill",
+    "headshot",
+    "explosion",
+    "vehicle_destruction",
+    "ambush",
+    "objective_capture",
+    "near_death_escape",
+    "squad_coordination",
+    "radio_communication",
+    "funny_voice_communication",
+    "unusual_battlefield_event"
+  ],
+  "ignored_events": [
+    "walking",
+    "running",
+    "inventory",
+    "map",
+    "respawn",
+    "waiting",
+    "normal_driving",
+    "routine_repeat_kills"
+  ],
+  "scene_model": {
+    "minimum_event_gap_seconds": 1.5,
+    "preferred_scene_window_seconds": [4, 18],
+    "default_pre_roll_seconds": 1.0,
+    "default_post_roll_seconds": 1.2,
+    "high_importance_pre_roll_seconds": 2.5,
+    "high_importance_post_roll_seconds": 2.0,
+    "required_narrative_steps": [
+      "enemy_contact",
+      "preparation",
+      "firefight",
+      "kill_or_turning_point",
+      "reaction",
+      "resolution"
+    ]
+  },
+  "scoring_weights": {
+    "intensity": 0.18,
+    "kills": 0.17,
+    "rarity": 0.15,
+    "audio_intensity": 0.12,
+    "speech_reaction": 0.08,
+    "visual_intensity": 0.12,
+    "narrative_value": 0.10,
+    "novelty": 0.04,
+    "confidence": 0.04
+  },
+  "editing_rules": [
+    {"event": "default", "transition": "hard_cut", "notes": "Standard moment uses a clean hard cut to preserve pace."},
+    {"event": "kill", "transition": "subtle_punch_in", "audio": "impact", "notes": "Keep the beat fast, but do not overdo the motion."},
+    {"event": "kill_high_importance", "transition": "short_slow_motion_plus_punch_in", "audio": "impact", "notes": "Important kill gets a little extra tempo control and emphasis."},
+    {"event": "multi_kill", "transition": "speed_ramp", "cut_pattern": "faster_cuts", "notes": "Use faster cadence and tighter framing to increase excitement."},
+    {"event": "explosion", "transition": "subtle_shake", "audio": "impact", "notes": "The effect is supportive, not overpowering."},
+    {"event": "funny_moment", "transition": "subtitle", "layout": "freeze_frame_optional", "notes": "Keep humor readable without dominating the scene."},
+    {"event": "cinematic_moment", "transition": "minimal_effects", "notes": "Do not add stylization if the natural tension is already strong."}
+  ],
+  "narrative_signals": {
+    "context_window_seconds": 6.0,
+    "combat_threshold_db": 18.0,
+    "reaction_threshold": 0.65,
+    "spectacle_threshold": 0.72,
+    "importance_threshold": 0.68
+  },
+  "vision": {
+    "enabled": false,
+    "provider": "ollama",
+    "base_url": "http://localhost:11434",
+    "model": "qwen3-vl:8b-instruct",
+    "max_scenes_per_video": 12,
+    "max_frames_per_scene": 5,
+    "request_timeout_seconds": 120
+  }
+}
