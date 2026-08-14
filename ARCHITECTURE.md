@@ -16,18 +16,16 @@ Game AI Editor is a local, CLI-driven engineering project for creating professio
 ## 3. High-level runtime flow
 
 ```text
-Input video
-  -> Media ingest & metadata
-  -> Audio extraction
-  -> Transcription
-  -> Visual analysis / OCR / scene understanding
-  -> Event detection
-  -> Context grouping into scenes
-  -> Scoring and ranking
-  -> Timeline planning
-  -> FFmpeg assembly and effects
-  -> Subtitle generation
-  -> QC and export
+CLI / desktop / batch
+  -> ProductionOrchestrator
+  -> Media metadata
+  -> Fast prefilter
+  -> Audio + motion + transcription + VisionProvider
+  -> Event normalization and fusion
+  -> Event Arc
+  -> Existing scoring / selection / timeline
+  -> Existing FFmpeg renderer
+  -> Existing QC
 ```
 
 ## 4. Package responsibilities
@@ -43,6 +41,10 @@ Loads JSON game profiles and config contracts. This package owns game metadata, 
 ### src/game_ai_editor/media
 
 Media ingestion layer. Handles file validation, FFprobe metadata extraction, video/audio splitting, frame sampling, and work directory generation.
+
+### src/game_ai_editor/orchestration
+
+Owns the single production execution path, canonical event contracts, signal fusion, session artifacts, source identity, resume state, error isolation, and progress callbacks. It depends on `VisionProvider`, never on Ollama directly.
 
 ### src/game_ai_editor/analysis
 
@@ -171,6 +173,10 @@ Before export, the final result should pass:
 - narrative pacing checks;
 - minimum quality threshold for final highlight count.
 
-## 10. Non-goals for this phase
+## 10. Desktop boundary
 
-This stage does not aim to implement the full end-to-end pipeline. It intentionally focuses on architecture, contracts, configuration, and professional editing logic.
+`desktop/` is an optional PySide6 frontend. It owns queue widgets, settings, and worker threads. Backend orchestration has no dependency on Qt and can be used from CLI or batch.
+
+## 11. Session artifacts
+
+Each production session stores source identity, stage status, normalized events, arcs, ranking, selection, timeline, output, and QC. Vision windows are independent files so successful windows can be reused during resume.

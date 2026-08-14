@@ -144,19 +144,9 @@ def qc_session(session_dir: str | Path) -> dict:
 
 
 def run_all_pipeline(source_path: str | Path, profile_path: str | Path | None = None) -> dict:
-    session_dir = create_session_dir(source_path)
-    analysis = analyze_video(source_path, profile_path=profile_path, session_dir=session_dir)
-    candidates = detect_candidates(session_dir, profile_path=profile_path)
-    selected = select_highlights_for_session(session_dir, profile_path=profile_path)
-    timeline = edit_session(session_dir)
-    final_path = render_session(session_dir)
-    qc = qc_session(session_dir)
-    return {
-        "session_dir": str(session_dir),
-        "analysis": analysis,
-        "candidates_count": len(candidates),
-        "selection_count": len(selected),
-        "timeline": timeline,
-        "final_path": final_path,
-        "qc": qc,
-    }
+    from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
+
+    orchestrator = ProductionOrchestrator.from_profile_path(
+        profile_path or Path("config/games/arma_reforger.json"),
+    )
+    return orchestrator.run(source_path)

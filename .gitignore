@@ -19,6 +19,12 @@ output/*
 !output/.gitkeep
 work/*
 !work/.gitkeep
+finalvids/*
+!finalvids/.gitkeep
+cache/*
+previews/*
+*.jpg
+*.jpeg
 
 # Model and media caches
 models/

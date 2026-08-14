@@ -2,7 +2,7 @@
 
 ## Project status
 
-This repository is currently in Phase 1: architecture and design. The goal of this stage is to establish a clean project contract before implementing the operational pipeline.
+The repository contains the first working production MVP: CLI, batch, Vision providers, unified orchestration, FFmpeg rendering, QC, and an optional PySide6 desktop frontend.
 
 ## Local environment
 
@@ -32,6 +32,7 @@ pip install -r requirements.txt
 - OpenCV: frame-level analysis
 - OCR / vision model: UI detection and scene understanding
 - Pydantic: validation and config structures
+- PySide6: desktop frontend and background worker
 
 ## Directory responsibilities
 
@@ -44,6 +45,10 @@ pip install -r requirements.txt
 - `tests/`: unit and integration tests as development proceeds
 
 ## Implementation phases
+
+### Current production MVP
+
+The shared execution path is `ProductionOrchestrator.run()`. It writes resumable per-video sessions and accepts an injected `VisionProvider`. `batch.py` owns discovery, manifests, and isolation; it does not own scoring or rendering decisions.
 
 ### Phase 1: architecture and contracts
 
@@ -117,6 +122,6 @@ Focus on:
 - Keep FFmpeg operations in dedicated editing utilities.
 - Preserve separation between detection, scoring, selection, and rendering.
 
-## Important restriction for this phase
+## Safe validation
 
-Do not implement the full end-to-end highlight pipeline yet. This project remains architecture-first so the later engineering work has a strong contract, maintainability, and game-specific logic model.
+Run the fast suite with `pytest -q`. The orchestration test uses a short synthetic video, a mock Vision provider, real FFmpeg assembly, and QC; it never contacts Ollama. Do not run `all`, non-dry `batch`, or real long-video analysis without an explicit smoke-test decision.

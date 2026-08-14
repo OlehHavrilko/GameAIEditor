@@ -5,7 +5,13 @@ from pathlib import Path
 from game_ai_editor.media.metadata import probe_media
 
 
-def run_qc(preview_path: str | Path, final_path: str | Path) -> dict:
+def run_qc(
+    preview_path: str | Path,
+    final_path: str | Path,
+    *,
+    source_path: str | Path | None = None,
+    timeline: list[dict] | None = None,
+) -> dict:
     checks: list[dict] = []
     for label, target in [("preview", preview_path), ("final", final_path)]:
         file_path = Path(target)
@@ -27,7 +33,16 @@ def run_qc(preview_path: str | Path, final_path: str | Path) -> dict:
         }
         checks.append(result)
 
-    passed = all(
+    timeline_bounds = True
+    if source_path is not None and timeline is not None:
+        source_info = probe_media(source_path).model_dump()
+        source_duration = float(source_info.get("duration") or 0.0)
+        timeline_bounds = all(
+            0.0 <= float(item.get("start_time", -1.0)) < float(item.get("end_time", 0.0)) <= source_duration
+            for item in timeline
+        )
+
+    passed = timeline_bounds and all(
         check["exists"] and (check["duration"] is None or float(check["duration"]) > 0.0)
         for check in checks
     )
@@ -35,5 +50,6 @@ def run_qc(preview_path: str | Path, final_path: str | Path) -> dict:
     return {
         "passed": passed,
         "checks": checks,
-        "warnings": [] if passed else ["Render output missing or invalid."],
+        "timeline_bounds": timeline_bounds,
+        "warnings": [] if passed else ["Render output, timeline, or source bounds are invalid."],
     }

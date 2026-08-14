@@ -19,8 +19,7 @@ def build_preview(source_path: str | Path, timeline: list[dict], output_path: st
     clips_dir.mkdir(parents=True, exist_ok=True)
 
     if not timeline:
-        fallback_duration = 3.0
-        timeline = [{"start_time": 0.0, "end_time": fallback_duration}]
+        raise ValueError("Cannot render a timeline without selected segments.")
 
     clip_paths: list[Path] = []
     for index, segment in enumerate(timeline):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -17,6 +18,10 @@ from game_ai_editor.vision.prompts import COARSE_SCAN_PROMPT
 from game_ai_editor.vision.sampler import sample_scene_frames
 from game_ai_editor.events.arcs import build_event_arcs
 from game_ai_editor.events.vision_adapter import vision_result_to_events
+from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
+from game_ai_editor.orchestration.state import STAGES as ORCHESTRATOR_STAGES
+from game_ai_editor.orchestration.state import stage_status as orchestration_stage_status
+from game_ai_editor.orchestration.state import write_json
 
 
 SUPPORTED_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm"}
@@ -187,6 +192,7 @@ def run_batch(
     max_videos: int | None = None,
     resume: bool = True,
     final_dir: str | Path = "finalvids",
+    profile_path: str | Path = "config/games/arma_reforger.json",
 ) -> dict[str, Any]:
     manifest = build_batch_manifest(input_directory, work_root=work_root, dry_run=dry_run)
     if dry_run:
@@ -195,7 +201,7 @@ def run_batch(
         raise ValueError("clips must be at least 1")
     if max_videos is not None and max_videos < 1:
         raise ValueError("max_videos must be at least 1")
-    return _run_production_batch(
+    return _run_orchestrated_batch(
         manifest,
         clips=clips,
         window_size=window_size,
@@ -204,7 +210,84 @@ def run_batch(
         max_videos=max_videos,
         resume=resume,
         final_dir=final_dir,
+        profile_path=profile_path,
     )
+
+
+def _run_orchestrated_batch(
+    manifest: dict[str, Any],
+    *,
+    clips: int,
+    window_size: float,
+    prefilter_threshold: float,
+    style: str,
+    max_videos: int | None,
+    resume: bool,
+    final_dir: str | Path,
+    profile_path: str | Path,
+) -> dict[str, Any]:
+    """Run every video through the shared production orchestrator."""
+    del window_size, prefilter_threshold, style
+    profile_path = Path(profile_path)
+    selected_videos = manifest["videos"][:max_videos] if max_videos else manifest["videos"]
+    summaries: list[dict[str, Any]] = []
+    selected_outputs: list[str] = []
+    for index, video in enumerate(selected_videos, start=1):
+        session_dir = Path(video["session_dir"])
+        try:
+            orchestrator = ProductionOrchestrator.from_profile_path(profile_path, resume=resume)
+            result = orchestrator.run(video["path"], session_dir=session_dir, max_clips=clips)
+            status = result.get("status", "FAILED")
+            final_path = result.get("final_path")
+            if final_path and Path(final_path).exists():
+                target = Path(final_dir) / f"{video['video_id']}.mp4"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(final_path, target)
+                selected_outputs.append(str(target))
+            video["status"] = status
+            video["error_type"] = None
+            video["error_message"] = None
+            video["stage_status"] = orchestration_stage_status(session_dir)
+            video["next_stage"] = next((stage for stage in ORCHESTRATOR_STAGES if video["stage_status"].get(stage) != "COMPLETE"), None)
+            summaries.append({
+                "video": video["filename"],
+                "status": status,
+                "events": len(result.get("events", [])),
+                "arcs": len(result.get("arcs", [])),
+                "selected_clips": len(result.get("selected", [])),
+                "final_path": final_path,
+            })
+        except Exception as exc:
+            video["status"] = "FAILED"
+            video["error_type"] = type(exc).__name__
+            video["error_message"] = str(exc)
+            video["stage_status"] = orchestration_stage_status(session_dir)
+            summaries.append({
+                "video": video["filename"],
+                "status": "FAILED",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+        manifest["videos"] = [entry for entry in manifest["videos"]]
+        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        write_json(manifest["manifest_path"], manifest)
+        print(f"[{index}/{len(selected_videos)}] {video['filename']} status={video['status']}")
+
+    successful = [item for item in summaries if item.get("status") == "SUCCESS"]
+    manifest["status"] = "completed" if summaries and len(successful) == len(summaries) else "partial" if successful else "failed"
+    manifest["production_summary"] = {
+        "videos_processed": len(selected_videos),
+        "successful_videos": len(successful),
+        "failed_videos": len(summaries) - len(successful),
+        "selected_clips": sum(item.get("selected_clips", 0) for item in summaries),
+    }
+    write_json(manifest["manifest_path"], manifest)
+    return {
+        **manifest,
+        "video_summaries": summaries,
+        "montage_path": selected_outputs[0] if len(selected_outputs) == 1 else None,
+        "qc": {"passed": bool(successful), "videos": summaries},
+    }
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -217,10 +300,10 @@ def _run_candidate_vision(
     candidates: list[dict[str, Any]],
     vision_dir: Path,
     *,
-    model: str = "qwen3-vl:8b-instruct",
+    model: str | None = None,
 ) -> tuple[list[dict[str, Any]], float]:
     source = Path(video["path"])
-    provider = OllamaVisionProvider(model=model)
+    provider = OllamaVisionProvider(model=model) if model else OllamaVisionProvider()
     results: list[dict[str, Any]] = []
     started = time.perf_counter()
     availability_error: str | None = None
