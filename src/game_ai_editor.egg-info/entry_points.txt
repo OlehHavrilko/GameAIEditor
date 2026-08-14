@@ -1,0 +1,2 @@
+[console_scripts]
+game-ai-editor = game_ai_editor.cli:main
