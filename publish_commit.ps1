@@ -59,6 +59,20 @@ $treeResponse = $treeResponseJson | ConvertFrom-Json
 $treeSha = $treeResponse.sha
 Write-Host "Tree created with SHA: $treeSha"
 
+# Read the current remote main before creating the commit. The parent is
+# required for a non-force fast-forward ref update when local and remote
+# histories were created independently.
+$remoteParentSha = $null
+try {
+    $remoteParentSha = gh api repos/OlehHavrilko/GameAIEditor/git/ref/heads/main --jq ".object.sha"
+    if ($remoteParentSha) {
+        $remoteParentSha = $remoteParentSha.Trim()
+        Write-Host "Using remote main as parent: $remoteParentSha"
+    }
+} catch {
+    Write-Host "Remote main does not exist; creating a root commit."
+}
+
 Write-Host "Creating commit..."
 $commitMsgRaw = git log -1 --pretty=%B
 if ($commitMsgRaw -is [array]) {
@@ -72,6 +86,14 @@ $commitInput = @{
     message = $commitMsg
     tree = $treeSha
 } | ConvertTo-Json -Depth 100 -Compress
+
+if ($remoteParentSha) {
+    $commitInput = @{
+        message = $commitMsg
+        tree = $treeSha
+        parents = @($remoteParentSha)
+    } | ConvertTo-Json -Depth 100 -Compress
+}
 
 $commitResponseJson = $commitInput | gh api --input - -X POST /repos/OlehHavrilko/GameAIEditor/git/commits
 $commitResponse = $commitResponseJson | ConvertFrom-Json
