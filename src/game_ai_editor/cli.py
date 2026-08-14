@@ -102,9 +102,12 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--max-videos", type=int, default=None, help="Limit the number of videos processed")
     batch_parser.add_argument("--resume", action="store_true", default=True, help="Reuse completed artifacts")
     batch_parser.add_argument("--final-dir", default="finalvids", help="Directory for the finished montage")
+    batch_parser.add_argument("--profile", default=str(DEFAULT_PROFILE), help="Path to a custom game profile")
 
     event_parser = subparsers.add_parser("event-test", help="Convert one Vision result into Event Arcs")
     event_parser.add_argument("vision_result", help="Path to a Vision result.json")
+
+    subparsers.add_parser("desktop", help="Launch the PySide6 desktop application")
 
     return parser
 
@@ -224,8 +227,11 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "all":
             result = run_all_pipeline(args.source, profile_path=args.profile)
-            LOGGER.info("Pipeline completed: %s", result["final_path"])
-            return 0
+            if result.get("status") == "NO_HIGHLIGHTS":
+                LOGGER.info("No significant highlights found. Session: %s", result["session_dir"])
+            else:
+                LOGGER.info("Pipeline completed: %s", result.get("final_path"))
+            return 0 if result.get("status") in {"SUCCESS", "NO_HIGHLIGHTS"} else 1
 
         if args.command == "batch":
             result = run_batch(
@@ -238,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_videos=args.max_videos,
                 resume=args.resume,
                 final_dir=args.final_dir,
+                profile_path=args.profile,
             )
             print(f"Found videos: {result['video_count']}")
             print(f"Total duration: {result['total_duration']:.3f}s")
@@ -255,6 +262,11 @@ def main(argv: list[str] | None = None) -> int:
             result = run_event_test(args.vision_result)
             print(json.dumps(result, indent=2))
             return 0
+
+        if args.command == "desktop":
+            from game_ai_editor.desktop.app import run_desktop_app
+
+            return run_desktop_app()
 
         parser.error(f"Unsupported command: {args.command}")
         return 2

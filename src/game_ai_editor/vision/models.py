@@ -76,6 +76,8 @@ class VisionResult(BaseModel):
         payload: dict[str, Any],
         request: VisionRequest,
         *,
+        provider: str = "ollama",
+        model: str = "qwen3-vl:8b-instruct",
         frame_dimensions: list[dict[str, int]],
         extraction_time_seconds: float,
         inference_time_seconds: float,
@@ -84,8 +86,8 @@ class VisionResult(BaseModel):
     ) -> "VisionResult":
         analysis = VisionAnalysisPayload.model_validate(payload)
         return cls(
-            provider="ollama",
-            model="qwen3-vl:8b-instruct",
+            provider=provider,
+            model=model,
             scene_id=request.scene_id,
             start_time=request.start_time,
             end_time=request.end_time,

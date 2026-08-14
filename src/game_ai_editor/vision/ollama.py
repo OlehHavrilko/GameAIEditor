@@ -113,6 +113,8 @@ class OllamaVisionProvider(VisionProvider):
             return VisionResult.from_model_payload(
                 model_payload,
                 request_data,
+                provider="ollama",
+                model=self.model,
                 frame_dimensions=[{"width": 0, "height": 0} for _ in request_data.frame_paths],
                 extraction_time_seconds=0.0,
                 inference_time_seconds=round(inference_time, 4),

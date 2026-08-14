@@ -19,11 +19,18 @@ def build_timeline(selection: list[dict], duration: float, profile: Any) -> list
             pre_roll = max(pre_roll, 1.5)
             post_roll = max(post_roll, 1.8)
 
-        start = max(0.0, float(segment.get("start_time", 0.0)) - pre_roll)
-        end = min(float(duration), float(segment.get("end_time", duration)) + post_roll)
+        arc = segment.get("arc") or {}
+        clip = segment.get("clip") or {}
+        if clip:
+            start = max(0.0, float(clip.get("start", segment.get("start_time", 0.0))))
+            end = min(float(duration), float(clip.get("end", segment.get("end_time", duration))))
+            pre_roll = max(0.0, float(segment.get("start_time", start)) - start)
+            post_roll = max(0.0, end - float(segment.get("end_time", end)))
+        else:
+            start = max(0.0, float(segment.get("start_time", 0.0)) - pre_roll)
+            end = min(float(duration), float(segment.get("end_time", duration)) + post_roll)
 
-        timeline.append(
-            {
+        timeline_item = {
                 "id": f"segment_{index:03d}",
                 "event_type": event_type,
                 "start_time": round(start, 3),
@@ -33,6 +40,8 @@ def build_timeline(selection: list[dict], duration: float, profile: Any) -> list
                 "score": round(score, 4),
                 "confidence": round(float(segment.get("confidence", 0.0)), 3),
             }
-        )
+        if arc:
+            timeline_item["arc"] = arc
+        timeline.append(timeline_item)
 
     return timeline

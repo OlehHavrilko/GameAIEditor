@@ -54,7 +54,8 @@ def _score(event: dict[str, Any], name: str) -> float:
 
 def _time(event: dict[str, Any], name: str) -> float:
     try:
-        return float(event.get(name, 0.0))
+        fallback = "start_time" if name == "start" else "end_time" if name == "end" else name
+        return float(event.get(name, event.get(fallback, 0.0)))
     except (TypeError, ValueError):
         return 0.0
 
