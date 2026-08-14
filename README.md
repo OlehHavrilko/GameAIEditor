@@ -1,90 +1,90 @@
 # Game AI Editor
 
-Local-first AI editor for building cinematic highlight reels from long gameplay footage, with Arma Reforger as the first supported title.
+Локальный AI-инструмент для поиска и монтажа лучших моментов из игровых видео. Первая поддерживаемая игра - **Arma Reforger**.
 
-Status: architecture-first scaffold only. Full automation pipeline will be implemented in subsequent phases.
+Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества.
 
-## Goal
-
-Given a long gameplay recording, the system should:
-
-- analyze video and audio;
-- recognize spoken commentary;
-- detect firefights, kills, explosions, vehicle destruction, and unusual battlefield events;
-- group related moments into narrative scenes;
-- score highlights by cinematic value;
-- select the best moments;
-- add context before and after events;
-- assemble a final sequence;
-- render a final MP4 using FFmpeg as the primary editing engine.
-
-## Core stack
-
-- Python 3.11+
-- FFmpeg + FFprobe
-- faster-whisper
-- OpenCV
-- OCR / visual recognition layer
-- Pydantic
-- JSON-driven configuration
-- CLI-first workflow
-
-## Project structure
+## Как это работает
 
 ```text
-GameAIEditor/
-├── .github/
-├── .gitignore
-├── README.md
-├── ARCHITECTURE.md
-├── DEVELOPMENT.md
-├── requirements.txt
-├── pyproject.toml
-├── config/
-│   └── games/
-│       └── arma_reforger.json
-├── skills/
-│   └── game-highlight-editor/
-│       └── SKILL.md
-├── src/
-│   └── game_ai_editor/
-│       ├── cli.py
-│       ├── config/
-│       ├── media/
-│       ├── analysis/
-│       ├── transcription/
-│       ├── vision/
-│       ├── events/
-│       ├── scoring/
-│       ├── selection/
-│       ├── timeline/
-│       ├── editing/
-│       ├── audio/
-│       ├── subtitles/
-│       └── qc/
-├── input/
-├── output/
-├── work/
-└── tests/
+video -> audio/motion/transcription -> events -> scores -> highlights -> timeline -> MP4 -> QC
 ```
 
-## Design principles
+Проект использует:
 
-1. Architecture before full automation.
-2. Local-first processing and deterministic configuration.
-3. Event detection must be contextual, not purely frame-based.
-4. Narrative scenes matter more than isolated kills.
-5. FFmpeg is the primary render and assembly engine.
-6. Quality checks must happen before final export.
+- Python 3.11+
+- FFmpeg и FFprobe
+- OpenCV
+- faster-whisper для распознавания речи
+- Pydantic и JSON-профили игр
+- Ollama Vision для дополнительного анализа сцен
 
-## Roadmap
+## Установка
 
-- Phase 1: architecture and game profile definition
-- Phase 2: media ingestion and metadata extraction
-- Phase 3: audio transcription and speech analysis
-- Phase 4: event detection and contextual scene grouping
-- Phase 5: scoring, preselection, and timeline planning
-- Phase 6: FFmpeg-based editing and export
-- Phase 7: subtitle generation and final QC
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-This project intentionally starts with the design layer so the later automation logic has a strong contract and a clear, modular foundation.
+FFmpeg и FFprobe должны быть доступны в `PATH`.
+
+## Основные команды
+
+Можно запускать этапы отдельно:
+
+```powershell
+game-ai-editor analyze input\video.mp4
+game-ai-editor detect work\video_session
+game-ai-editor select work\video_session
+game-ai-editor edit work\video_session
+game-ai-editor render work\video_session
+game-ai-editor qc work\video_session
+```
+
+Запуск полного пайплайна:
+
+```powershell
+game-ai-editor all input\video.mp4
+```
+
+Другие полезные команды:
+
+```powershell
+game-ai-editor prefilter input\video.mp4
+game-ai-editor batch input
+game-ai-editor vision-scan input\video.mp4 --prefilter
+```
+
+## Структура проекта
+
+- `src/game_ai_editor/` - основной код;
+- `config/games/` - настройки игр;
+- `input/` - исходные видео;
+- `work/` - промежуточные файлы анализа;
+- `output/` и `finalvids/` - готовые видео;
+- `tests/` - автоматические тесты.
+
+Каждый запуск сохраняет JSON-файлы с метаданными, движением, транскрипцией, событиями, кандидатами, выбором моментов, таймлайном и результатами QC.
+
+## Текущее состояние
+
+Проект находится в стадии активного MVP. Это рабочая основа, но ещё не законченный продукт.
+
+Уже реализовано:
+
+- получение метаданных и анализ аудио;
+- анализ движения и поиск событий-кандидатов;
+- распознавание речи;
+- оценка и выбор лучших моментов;
+- построение таймлайна и preview/render через FFmpeg;
+- пакетная обработка видео и продолжение незавершённых запусков;
+- отдельные тесты и сканирование через Ollama Vision;
+- автоматические тесты основного пайплайна и vision-модулей.
+
+В разработке:
+
+- точность определения игровых событий;
+- качество автоматического выбора сцен;
+- эффекты монтажа, субтитры и правила QC;
+- поддержка игр помимо Arma Reforger.
