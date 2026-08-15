@@ -7,8 +7,10 @@ from typing import Any
 
 class StageStatus(StrEnum):
     NOT_STARTED = "NOT_STARTED"
+    RUNNING = "RUNNING"
     PARTIAL = "PARTIAL"
     COMPLETE = "COMPLETE"
+    SKIPPED = "SKIPPED"
     FAILED = "FAILED"
 
 

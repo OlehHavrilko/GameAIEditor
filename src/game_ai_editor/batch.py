@@ -19,6 +19,7 @@ from game_ai_editor.vision.sampler import sample_scene_frames
 from game_ai_editor.events.arcs import build_event_arcs
 from game_ai_editor.events.vision_adapter import vision_result_to_events
 from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
+from game_ai_editor.orchestration.session import AnalysisQueue
 from game_ai_editor.orchestration.state import STAGES as ORCHESTRATOR_STAGES
 from game_ai_editor.orchestration.state import stage_status as orchestration_stage_status
 from game_ai_editor.orchestration.state import write_json
@@ -230,11 +231,26 @@ def _run_orchestrated_batch(
     del window_size, prefilter_threshold, style
     profile_path = Path(profile_path)
     selected_videos = manifest["videos"][:max_videos] if max_videos else manifest["videos"]
+    project_dir = Path(manifest["manifest_path"]).parent
+    queue = AnalysisQueue(project_dir)
+    queue.load()
+    for video in selected_videos:
+        session = queue.add(
+            video["path"],
+            video["session_dir"],
+            profile_path=profile_path,
+        )
+        video["session_id"] = session.session_id
+    queue.save()
     summaries: list[dict[str, Any]] = []
     selected_outputs: list[str] = []
     for index, video in enumerate(selected_videos, start=1):
         session_dir = Path(video["session_dir"])
+        session = queue.get(video["session_id"])
         try:
+            if session is None:
+                raise BatchError(f"Queue session missing: {video['session_id']}")
+            queue.mark_running(session.session_id)
             orchestrator = ProductionOrchestrator.from_profile_path(profile_path, resume=resume)
             result = orchestrator.run(video["path"], session_dir=session_dir, max_clips=clips)
             status = result.get("status", "FAILED")
@@ -247,6 +263,7 @@ def _run_orchestrated_batch(
             video["status"] = status
             video["error_type"] = None
             video["error_message"] = None
+            queue.mark_completed(session.session_id, status)
             video["stage_status"] = orchestration_stage_status(session_dir)
             video["next_stage"] = next((stage for stage in ORCHESTRATOR_STAGES if video["stage_status"].get(stage) != "COMPLETE"), None)
             summaries.append({
@@ -261,6 +278,8 @@ def _run_orchestrated_batch(
             video["status"] = "FAILED"
             video["error_type"] = type(exc).__name__
             video["error_message"] = str(exc)
+            if session is not None:
+                queue.mark_failed(session.session_id, type(exc).__name__.upper(), str(exc))
             video["stage_status"] = orchestration_stage_status(session_dir)
             summaries.append({
                 "video": video["filename"],
@@ -270,6 +289,7 @@ def _run_orchestrated_batch(
             })
         manifest["videos"] = [entry for entry in manifest["videos"]]
         manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        queue.save()
         write_json(manifest["manifest_path"], manifest)
         print(f"[{index}/{len(selected_videos)}] {video['filename']} status={video['status']}")
 

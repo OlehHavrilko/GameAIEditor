@@ -1,8 +1,10 @@
-# Game AI Editor
+# GameAIEditor
+
+> Рабочий production MVP для локального анализа игровых записей и сборки highlight-монтажей. Это ещё не коммерческий видеоредактор: текущий фокус — надёжный pipeline, resumable sessions, local AI и FFmpeg.
 
 Локальный AI-инструмент для поиска и монтажа лучших моментов из игровых видео. Первый game profile — **Arma Reforger**, а pipeline не содержит game-specific orchestration.
 
-Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества.
+Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества. Первый game profile — **Arma Reforger**.
 
 ## Как это работает
 
@@ -95,7 +97,7 @@ Ollama и LM Studio не отправляют кадры в интернет. Д
 
 ## Текущее состояние
 
-Проект находится в стадии первого рабочего MVP. Legacy stage commands сохранены для совместимости, но production-команды используют единый orchestrator.
+Проект находится в стадии **Production MVP hardening**. Legacy stage commands сохранены для совместимости, но production-команды используют единый `ProductionOrchestrator`.
 
 Уже реализовано:
 
@@ -109,4 +111,42 @@ Ollama и LM Studio не отправляют кадры в интернет. Д
 - автоматические тесты основного пайплайна и vision-модулей.
 - synthetic orchestrator E2E с mock Vision и реальным FFmpeg/QC.
 
-Планируемые ограничения текущей версии: субтитры, сложные эффекты, полноценная редактура клипов в UI и дополнительные game profiles требуют следующих этапов.
+Дополнительно реализованы:
+
+- first-run diagnostics и optional local AI setup;
+- cancellable model download и analysis workers;
+- persistent queue с pause/resume/cancel/retry и stale-session recovery;
+- Results workflow из реальных artifacts с изменением selection и повторным render;
+- structured error UX и degraded Vision mode;
+- PyInstaller one-directory packaging для Windows.
+
+Ограничения текущей версии: коммерческий installer/updater, сложные эффекты, полноценная non-linear редактура, дополнительные game profiles и optional downloadable ML components требуют следующих этапов.
+
+## Проверка
+
+```powershell
+.venv\Scripts\pytest -q
+.venv\Scripts\python.exe -c "from game_ai_editor.desktop.app import MainWindow; print('ui-import-ok')"
+.venv\Scripts\python.exe -m game_ai_editor system-status
+.venv\Scripts\python.exe -m game_ai_editor runtime-status
+```
+
+Реальный Ollama smoke test является manual-only и не запускается обычным `pytest`.
+
+## Packaging
+
+```powershell
+.venv\Scripts\python.exe -m pip install pyinstaller
+.venv\Scripts\python.exe -m PyInstaller packaging\game_ai_editor.spec
+```
+
+Подробности: [docs/PACKAGING.md](docs/PACKAGING.md). Для разработки PyInstaller не обязателен.
+
+## Документация
+
+- [Architecture](ARCHITECTURE.md)
+- [Development guide](DEVELOPMENT.md)
+- [Production pipeline](docs/PIPELINE.md)
+- [AI providers](docs/AI_PROVIDERS.md)
+- [Packaging](docs/PACKAGING.md)
+- [Contributing](CONTRIBUTING.md)

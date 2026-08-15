@@ -12,7 +12,7 @@ from game_ai_editor.editing.ffmpeg_editor import build_preview, render_final
 from game_ai_editor.events.arcs import build_event_arcs
 from game_ai_editor.events.detector import detect_events
 from game_ai_editor.events.vision_adapter import vision_result_to_events
-from game_ai_editor.media.metadata import probe_media
+from game_ai_editor.media.metadata import MediaMetadata, probe_media
 from game_ai_editor.qc.checks import run_qc
 from game_ai_editor.scoring.score import score_candidates
 from game_ai_editor.selection.selector import select_highlights
@@ -21,16 +21,18 @@ from game_ai_editor.transcription.whisper import transcribe_audio
 from game_ai_editor.vision.base import VisionProvider
 from game_ai_editor.vision.factory import create_vision_provider
 from game_ai_editor.vision.models import VisionRequest
+from game_ai_editor.vision.ollama import OllamaModelError, OllamaUnavailableError, OllamaVisionError
 from game_ai_editor.vision.prefilter import run_prefilter
 from game_ai_editor.vision.prompts import COARSE_SCAN_PROMPT
 from game_ai_editor.vision.sampler import sample_scene_frames
 
 from .fusion import fuse_events, normalize_events
 from .models import StageStatus
-from .state import STAGES, source_identity, source_matches, utc_now, write_json
+from .state import STAGES, configuration_fingerprint, initial_stage_statuses, source_identity, source_matches, utc_now, write_json
 
 
 ProgressCallback = Callable[[str, str, dict[str, Any]], None]
+CancellationCallback = Callable[[], bool]
 
 
 def _read_json(path: Path) -> Any:
@@ -44,11 +46,13 @@ class ProductionOrchestrator:
         profile: Any,
         vision_provider: VisionProvider | None = None,
         progress: ProgressCallback | None = None,
+        cancellation_requested: CancellationCallback | None = None,
         resume: bool = True,
     ) -> None:
         self.profile = profile
         self.vision_provider = vision_provider
         self.progress = progress
+        self.cancellation_requested = cancellation_requested
         self.resume = resume
 
     @classmethod
@@ -67,6 +71,10 @@ class ProductionOrchestrator:
         if self.progress:
             self.progress(stage, status, details)
 
+    def _check_cancelled(self) -> None:
+        if self.cancellation_requested and self.cancellation_requested():
+            raise RuntimeError("JOB_CANCELLED")
+
     def _status(self, session_dir: Path, **values: Any) -> None:
         path = session_dir / "status.json"
         payload = _read_json(path) if path.exists() else {}
@@ -74,24 +82,119 @@ class ProductionOrchestrator:
         payload["updated_at"] = utc_now()
         write_json(path, payload)
 
+    def _set_stage_state(self, session_dir: Path, stage: str, status: StageStatus | str, **details: Any) -> None:
+        path = session_dir / "status.json"
+        payload = _read_json(path) if path.exists() else {}
+        stages = payload.setdefault("stages", {name: {"status": str(StageStatus.NOT_STARTED)} for name in STAGES})
+        stage_payload = stages.setdefault(stage, {"status": str(StageStatus.NOT_STARTED)})
+        now = utc_now()
+        if str(status) == str(StageStatus.RUNNING) and not stage_payload.get("started_at"):
+            stage_payload["started_at"] = now
+        stage_payload.update(details)
+        stage_payload["status"] = str(status)
+        stage_payload["updated_at"] = now
+        if str(status) in {str(StageStatus.COMPLETE), str(StageStatus.FAILED), str(StageStatus.SKIPPED)}:
+            stage_payload["completed_at"] = now
+        payload["stages"] = stages
+        payload["updated_at"] = now
+        payload["current_stage"] = stage
+        completed = sum(
+            str(item.get("status")) in {str(StageStatus.COMPLETE), str(StageStatus.SKIPPED)}
+            for item in stages.values()
+        )
+        payload["overall_progress"] = round(100.0 * completed / max(1, len(STAGES)), 1)
+        write_json(path, payload)
+
     def _stage(self, session_dir: Path, stage: str, action: Callable[[], Any]) -> Any:
         self._emit(stage, "START")
+        self._set_stage_state(session_dir, stage, StageStatus.RUNNING)
         self._status(session_dir, status="RUNNING", current_stage=stage, stage=stage, started_at=utc_now())
         try:
+            self._check_cancelled()
             result = action()
         except Exception as exc:
+            self._set_stage_state(
+                session_dir,
+                stage,
+                StageStatus.FAILED,
+                error_code=self._error_code(exc),
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
             self._status(
                 session_dir,
                 status="FAILED",
                 current_stage=stage,
+                error_code=self._error_code(exc),
                 error_type=type(exc).__name__,
                 error_message=str(exc),
             )
             self._emit(stage, "FAILED", error_type=type(exc).__name__, error_message=str(exc))
             raise
+        self._set_stage_state(session_dir, stage, StageStatus.COMPLETE)
         self._status(session_dir, status="RUNNING", current_stage=stage, completed_stage=stage)
         self._emit(stage, "COMPLETE")
         return result
+
+    def _stage_cached(
+        self,
+        session_dir: Path,
+        stage: str,
+        artifact: Path,
+        loader: Callable[[Path], Any],
+        action: Callable[[], Any],
+    ) -> Any:
+        if self.resume and artifact.exists():
+            try:
+                result = loader(artifact)
+                self._set_stage_state(session_dir, stage, StageStatus.COMPLETE, resumed=True)
+                self._emit(stage, "RESUMED", artifact=str(artifact))
+                return result
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass
+        return self._stage(session_dir, stage, action)
+
+    @staticmethod
+    def _error_code(exc: Exception) -> str:
+        if str(exc) == "JOB_CANCELLED":
+            return "JOB_CANCELLED"
+        if isinstance(exc, OllamaModelError):
+            return "VISION_MODEL_MISSING"
+        if isinstance(exc, OllamaUnavailableError):
+            return "VISION_PROVIDER_OFFLINE"
+        if isinstance(exc, TimeoutError):
+            return "VISION_TIMEOUT"
+        if isinstance(exc, FileNotFoundError):
+            return "INVALID_VIDEO"
+        code = type(exc).__name__.upper()
+        if "FFMPEG" in code:
+            return "FFMPEG_ERROR"
+        return code
+
+    def _degrade_vision(self, session_dir: Path, exc: Exception) -> None:
+        error_code = self._error_code(exc)
+        self._set_stage_state(
+            session_dir,
+            "vision",
+            StageStatus.SKIPPED,
+            error_code=error_code,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            mode="DEGRADED",
+        )
+        self._status(
+            session_dir,
+            status="RUNNING",
+            degraded_mode=True,
+            degraded_reason=error_code,
+            vision={
+                "enabled": True,
+                "mode": "DEGRADED",
+                "status": error_code,
+                "provider": type(self.vision_provider).__name__ if self.vision_provider else None,
+            },
+        )
+        self._emit("vision", "DEGRADED", error_code=error_code, error_message=str(exc))
 
     def _session_dir(self, video: Path, session_dir: str | Path | None) -> Path:
         if session_dir is not None:
@@ -109,6 +212,7 @@ class ProductionOrchestrator:
         events: list[dict[str, Any]] = []
         max_candidates = self.profile.vision.max_scenes_per_video
         for index, candidate in enumerate(candidates[:max_candidates], start=1):
+            self._check_cancelled()
             result_path = vision_dir / f"window_{index:06d}.json"
             if self.resume and result_path.exists():
                 payload = _read_json(result_path)
@@ -134,6 +238,7 @@ class ProductionOrchestrator:
                     context={"prefilter_score": candidate.get("score", 0.0)},
                 )
                 result = self.vision_provider.analyze(request)
+                self._check_cancelled()
                 result.extraction_time_seconds = round(extraction_time, 4)
                 result.frame_count = len(frames)
                 payload = result.model_dump()
@@ -161,27 +266,59 @@ class ProductionOrchestrator:
             raise ValueError("max_clips must be at least 1")
         session = self._session_dir(source, session_dir)
         identity = source_identity(source)
+        fingerprint = configuration_fingerprint(self.profile, max_clips=max_clips, target_duration=target_duration)
         existing_status = session / "status.json"
         if self.resume and existing_status.exists():
             existing = _read_json(existing_status)
             if existing.get("source_identity") and not source_matches(existing, identity):
                 raise RuntimeError("Session source identity does not match the input video.")
-        self._status(session, status="RUNNING", current_stage="metadata", source_identity=identity.__dict__, started_at=utc_now())
+            if existing.get("configuration_fingerprint") and existing.get("configuration_fingerprint") != fingerprint:
+                raise RuntimeError("Session configuration fingerprint does not match the current analysis settings.")
+        existing_payload = _read_json(existing_status) if existing_status.exists() else {}
+        self._status(
+            session,
+            status="RUNNING",
+            current_stage="metadata",
+            source_identity=identity.__dict__,
+            configuration_fingerprint=fingerprint,
+            started_at=utc_now(),
+            stages=existing_payload.get("stages") or {stage: {"status": status} for stage, status in initial_stage_statuses().items()},
+            vision={
+                "enabled": self.vision_provider is not None,
+                "mode": "FULL" if self.vision_provider is not None else "DISABLED",
+                "status": "READY" if self.vision_provider is not None else "DISABLED",
+                "provider": type(self.vision_provider).__name__ if self.vision_provider else None,
+            },
+        )
 
-        metadata = self._stage(session, "metadata", lambda: probe_media(source))
+        metadata = self._stage_cached(
+            session,
+            "metadata",
+            session / "metadata.json",
+            lambda path: MediaMetadata.model_validate(_read_json(path)),
+            lambda: probe_media(source),
+        )
         write_json(session / "metadata.json", {**metadata.model_dump(), "source_identity": identity.__dict__})
         duration = float(metadata.duration or 0.0)
 
-        prefilter = self._stage(
+        prefilter = self._stage_cached(
             session,
             "prefilter",
+            session / "prefilter" / "candidates.json",
+            _read_json,
             lambda: run_prefilter(source, output_dir=session / "prefilter"),
         )
         write_json(session / "prefilter" / "candidates.json", prefilter)
 
-        audio = self._stage(session, "audio", lambda: analyze_audio(source))
-        motion = self._stage(session, "motion", lambda: analyze_motion(source))
-        transcript = self._stage(session, "transcription", lambda: transcribe_audio(source))
+        audio = self._stage_cached(
+            session, "audio", session / "signals" / "audio.json", _read_json, lambda: analyze_audio(source)
+        )
+        motion = self._stage_cached(
+            session, "motion", session / "signals" / "motion.json", _read_json, lambda: analyze_motion(source)
+        )
+        transcript = self._stage_cached(
+            session, "transcription", session / "signals" / "transcript.json", _read_json, lambda: transcribe_audio(source)
+        )
         legacy_events = detect_events(metadata, audio, motion, transcript, self.profile)
         write_json(session / "signals" / "audio.json", audio)
         write_json(session / "signals" / "motion.json", motion)
@@ -189,18 +326,61 @@ class ProductionOrchestrator:
         normalized_legacy = normalize_events(legacy_events, "legacy")
 
         vision_events: list[dict[str, Any]] = []
-        if self.vision_provider is not None and prefilter.get("candidates"):
-            vision_events = self._stage(
+        cached_events_path = session / "events.json"
+        cached_events = None
+        if self.resume and cached_events_path.exists():
+            try:
+                cached_events = _read_json(cached_events_path)
+            except (OSError, json.JSONDecodeError):
+                cached_events = None
+        if isinstance(cached_events, dict) and isinstance(cached_events.get("events"), list):
+            fused = self._stage_cached(
                 session,
-                "vision",
-                lambda: self._vision_events(source, prefilter["candidates"], session),
+                "events",
+                cached_events_path,
+                lambda path: _read_json(path)["events"],
+                lambda: [],
             )
-        elif self.vision_provider is not None:
-            self._emit("vision", "COMPLETE", windows=0, skipped="no_prefilter_candidates")
-        fused = fuse_events(normalized_legacy + vision_events)
-        write_json(session / "events.json", {"events": fused, "legacy_count": len(normalized_legacy), "vision_count": len(vision_events)})
+            self._set_stage_state(session, "vision", StageStatus.COMPLETE if cached_events.get("vision_count", 0) else StageStatus.SKIPPED, resumed=True)
+            vision_enabled = False
+        else:
+            fused = None
+            vision_enabled = self.vision_provider is not None
+        if vision_enabled:
+            checker = getattr(self.vision_provider, "check_available", None)
+            if callable(checker):
+                try:
+                    checker()
+                except (OllamaVisionError, OSError, RuntimeError) as exc:
+                    self._degrade_vision(session, exc if isinstance(exc, Exception) else RuntimeError(str(exc)))
+                    vision_enabled = False
+        else:
+            self._set_stage_state(session, "vision", StageStatus.SKIPPED, mode="DISABLED", error_code="VISION_DISABLED")
 
-        arcs = build_event_arcs(fused)
+        if vision_enabled and prefilter.get("candidates"):
+            try:
+                vision_events = self._stage(
+                    session,
+                    "vision",
+                    lambda: self._vision_events(source, prefilter["candidates"], session),
+                )
+            except (OllamaVisionError, OSError, RuntimeError) as exc:
+                self._degrade_vision(session, exc if isinstance(exc, Exception) else RuntimeError(str(exc)))
+                vision_events = []
+        elif vision_enabled:
+            self._set_stage_state(session, "vision", StageStatus.SKIPPED, mode="NO_CANDIDATES", error_code="NO_PREFILTER_CANDIDATES")
+            self._emit("vision", "COMPLETE", windows=0, skipped="no_prefilter_candidates")
+        if fused is None:
+            fused = self._stage(session, "events", lambda: fuse_events(normalized_legacy + vision_events))
+            write_json(session / "events.json", {"events": fused, "legacy_count": len(normalized_legacy), "vision_count": len(vision_events)})
+
+        arcs = self._stage_cached(
+            session,
+            "arcs",
+            session / "arcs.json",
+            lambda path: _read_json(path)["arcs"],
+            lambda: build_event_arcs(fused),
+        )
         write_json(session / "arcs.json", {"arcs": arcs})
         arc_candidates: list[dict[str, Any]] = []
         for arc in arcs:
@@ -220,23 +400,59 @@ class ProductionOrchestrator:
             candidate["speech_reaction"] = max((float(event.get("speech_reaction", 0.0)) for event in fused), default=0.0)
             candidate["kill_count"] = 1 if candidate["event_type"] in {"kill", "multiple_kills", "headshot"} else 0
             arc_candidates.append(candidate)
-        scored = score_candidates(arc_candidates, self.profile)
+        scored = self._stage_cached(
+            session,
+            "scoring",
+            session / "ranking.json",
+            lambda path: _read_json(path)["candidates"],
+            lambda: score_candidates(arc_candidates, self.profile),
+        )
         write_json(session / "ranking.json", {"candidates": scored})
-        selected = select_highlights(scored, self.profile, max_count=max_clips)
+        selected = self._stage_cached(
+            session,
+            "selection",
+            session / "selection.json",
+            lambda path: _read_json(path)["selection"],
+            lambda: select_highlights(scored, self.profile, max_count=max_clips),
+        )
         if target_duration is not None:
             selected = self._limit_duration(selected, target_duration)
         write_json(session / "selection.json", {"selection": selected, "status": "NO_HIGHLIGHTS" if not selected else "READY"})
         if not selected:
             result = {"status": "NO_HIGHLIGHTS", "session_dir": str(session), "metadata": metadata.model_dump(), "selected": []}
+            self._set_stage_state(session, "timeline", StageStatus.SKIPPED, error_code="NO_HIGHLIGHTS")
+            self._set_stage_state(session, "render", StageStatus.SKIPPED, error_code="NO_HIGHLIGHTS")
+            self._set_stage_state(session, "qc", StageStatus.SKIPPED, error_code="NO_HIGHLIGHTS")
             self._status(session, status="NO_HIGHLIGHTS", current_stage="selection", completed_at=utc_now())
             return result
 
-        timeline = build_timeline(selected, duration, self.profile)
+        timeline = self._stage_cached(
+            session,
+            "timeline",
+            session / "timeline.json",
+            lambda path: _read_json(path)["timeline"],
+            lambda: build_timeline(selected, duration, self.profile),
+        )
         write_json(session / "timeline.json", {"timeline": timeline})
         output_dir = session / "output"
-        preview = build_preview(source, timeline, output_dir / "preview.mp4")
-        final = render_final(preview, output_dir / "montage.mp4")
-        qc = run_qc(preview, final, source_path=source, timeline=timeline)
+        def render_action() -> Path:
+            preview = build_preview(source, timeline, output_dir / "preview.mp4")
+            return render_final(preview, output_dir / "montage.mp4")
+
+        final = self._stage_cached(
+            session,
+            "render",
+            output_dir / "montage.mp4",
+            lambda path: path,
+            render_action,
+        )
+        qc = self._stage_cached(
+            session,
+            "qc",
+            output_dir / "qc.json",
+            _read_json,
+            lambda: run_qc(output_dir / "preview.mp4", final, source_path=source, timeline=timeline),
+        )
         write_json(output_dir / "qc.json", qc)
         status = "SUCCESS" if qc.get("passed") else "QC_FAILED"
         self._status(session, status=status, current_stage="qc", completed_at=utc_now())
@@ -251,6 +467,28 @@ class ProductionOrchestrator:
             "final_path": str(final),
             "qc": qc,
         }
+
+    def rerender_selection(self, video: str | Path, session_dir: str | Path, selected: list[dict[str, Any]]) -> dict[str, Any]:
+        source = Path(video).resolve()
+        session = Path(session_dir)
+        metadata = MediaMetadata.model_validate(_read_json(session / "metadata.json"))
+        write_json(session / "selection.json", {"selection": selected, "status": "NO_HIGHLIGHTS" if not selected else "READY"})
+        timeline_path = session / "timeline.json"
+        output_dir = session / "output"
+        for artifact in (timeline_path, output_dir / "preview.mp4", output_dir / "montage.mp4", output_dir / "qc.json"):
+            artifact.unlink(missing_ok=True)
+        if not selected:
+            self._status(session, status="NO_HIGHLIGHTS", current_stage="selection", completed_at=utc_now())
+            return {"status": "NO_HIGHLIGHTS", "session_dir": str(session), "selected": []}
+        timeline = build_timeline(selected, float(metadata.duration or 0.0), self.profile)
+        write_json(timeline_path, {"timeline": timeline})
+        output_dir.mkdir(parents=True, exist_ok=True)
+        preview = build_preview(source, timeline, output_dir / "preview.mp4")
+        final = render_final(preview, output_dir / "montage.mp4")
+        qc = run_qc(output_dir / "preview.mp4", final, source_path=source, timeline=timeline)
+        write_json(output_dir / "qc.json", qc)
+        self._status(session, status="SUCCESS" if qc.get("passed") else "QC_FAILED", current_stage="qc", completed_at=utc_now())
+        return {"status": "SUCCESS" if qc.get("passed") else "QC_FAILED", "session_dir": str(session), "selected": selected, "timeline": timeline, "final_path": str(final), "qc": qc}
 
     @staticmethod
     def _limit_duration(selection: list[dict[str, Any]], target_duration: float) -> list[dict[str, Any]]:

@@ -20,6 +20,8 @@ from game_ai_editor.workflow import (
 from game_ai_editor.vision.poc import run_vision_test
 from game_ai_editor.vision.prefilter import run_prefilter
 from game_ai_editor.vision.scan import run_vision_scan
+from game_ai_editor.diagnostics import collect_system_diagnostics
+from game_ai_editor.runtime import OllamaRuntimeManager
 
 
 LOGGER = logging.getLogger("game_ai_editor")
@@ -106,6 +108,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     event_parser = subparsers.add_parser("event-test", help="Convert one Vision result into Event Arcs")
     event_parser.add_argument("vision_result", help="Path to a Vision result.json")
+
+    runtime_parser = subparsers.add_parser("runtime-status", help="Inspect the configured local Ollama runtime")
+    runtime_parser.add_argument("--base-url", default="http://localhost:11434", help="Ollama base URL")
+    runtime_parser.add_argument("--model", default="qwen3-vl:8b-instruct", help="Vision model to validate")
+
+    subparsers.add_parser("system-status", help="Inspect local system and media tool readiness")
 
     subparsers.add_parser("desktop", help="Launch the PySide6 desktop application")
 
@@ -262,6 +270,16 @@ def main(argv: list[str] | None = None) -> int:
             result = run_event_test(args.vision_result)
             print(json.dumps(result, indent=2))
             return 0
+
+        if args.command == "runtime-status":
+            snapshot = OllamaRuntimeManager(base_url=args.base_url, model=args.model).detect()
+            print(json.dumps(snapshot.as_dict(), indent=2))
+            return 0 if snapshot.state not in {"ERROR", "NOT_INSTALLED"} else 1
+
+        if args.command == "system-status":
+            result = collect_system_diagnostics()
+            print(json.dumps(result, indent=2))
+            return 0 if result["ready"] else 1
 
         if args.command == "desktop":
             from game_ai_editor.desktop.app import run_desktop_app
