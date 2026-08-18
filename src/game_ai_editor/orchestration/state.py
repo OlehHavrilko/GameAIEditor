@@ -39,14 +39,20 @@ def source_identity(path: str | Path, include_hash: bool = False) -> SourceIdent
     return SourceIdentity(str(source), source.name, stat.st_size, stat.st_mtime_ns, digest)
 
 
-def source_matches(payload: dict[str, Any], identity: SourceIdentity) -> bool:
+def source_matches(payload: dict[str, Any], identity: SourceIdentity, *, require_hash: bool = False) -> bool:
     stored = payload.get("source_identity", {})
-    return (
+    fast_match = (
         stored.get("filename") == identity.filename
         and int(stored.get("size", -1)) == identity.size
         and int(stored.get("mtime_ns", -1)) == identity.mtime_ns
         and str(Path(stored.get("path", "")).resolve()) == identity.path
     )
+    if not fast_match:
+        return False
+    stored_hash = stored.get("sha256")
+    if require_hash or stored_hash is not None:
+        return bool(stored_hash and identity.sha256 and stored_hash == identity.sha256)
+    return True
 
 
 def _valid_json(path: Path) -> bool:

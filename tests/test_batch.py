@@ -10,6 +10,7 @@ from game_ai_editor.batch import (
     next_pending_stage,
     run_batch,
 )
+from game_ai_editor.storage import ensure_project_output_dir, project_id_from_source
 
 
 def _fake_metadata(path: Path) -> SimpleNamespace:
@@ -70,3 +71,57 @@ def test_empty_folder_dry_run(monkeypatch, tmp_path: Path) -> None:
     assert result["total_duration"] == 0.0
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     assert manifest["videos"] == []
+
+
+def test_batch_uses_canonical_sessions_and_outputs_for_mixed_results(monkeypatch, tmp_path: Path) -> None:
+    for name in ("video1.mp4", "video2.mp4", "video3.mp4"):
+        (tmp_path / name).write_bytes(name.encode())
+    monkeypatch.setattr("game_ai_editor.batch.probe_media", _fake_metadata)
+
+    class FakeOrchestrator:
+        @classmethod
+        def from_profile_path(cls, profile_path, resume=True):
+            return cls()
+
+        def run(self, source, *, session_dir, max_clips):
+            project_id = project_id_from_source(source)
+            output_dir = ensure_project_output_dir(project_id)
+            source_name = Path(source).stem
+            if source_name == "video2":
+                return {
+                    "status": "NO_HIGHLIGHTS",
+                    "session_dir": str(session_dir),
+                    "selected": [],
+                    "final_output_path": None,
+                    "preview_output_path": None,
+                    "output_directory": str(output_dir),
+                }
+            final_path = output_dir / "final.mp4"
+            preview_path = output_dir / "preview.mp4"
+            final_path.write_bytes(b"final")
+            preview_path.write_bytes(b"preview")
+            return {
+                "status": "SUCCESS",
+                "session_dir": str(session_dir),
+                "selected": [{"event_type": "kill"}],
+                "final_path": str(final_path),
+                "final_output_path": str(final_path),
+                "preview_output_path": str(preview_path),
+                "output_directory": str(output_dir),
+            }
+
+    monkeypatch.setattr("game_ai_editor.batch.ProductionOrchestrator", FakeOrchestrator)
+    result = run_batch(tmp_path, work_root=tmp_path / "batch-work", final_dir=tmp_path / "legacy")
+
+    assert result["production_summary"]["successful_videos"] == 2
+    assert result["production_summary"]["failed_videos"] == 1
+    assert result["montage_path"] is None
+    for name in ("video1.mp4", "video3.mp4"):
+        output_dir = ensure_project_output_dir(project_id_from_source(tmp_path / name))
+        assert (output_dir / "final.mp4").exists()
+        assert (output_dir / "preview.mp4").exists()
+    video2_output = ensure_project_output_dir(project_id_from_source(tmp_path / "video2.mp4"))
+    assert not (video2_output / "final.mp4").exists()
+    assert not (tmp_path / "legacy").exists()
+    for video in result["videos"]:
+        assert Path(video["session_dir"]).as_posix().replace("\\", "/").startswith("work/sessions/")

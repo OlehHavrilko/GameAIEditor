@@ -90,6 +90,8 @@ Subtitle generation using transcription data and optional OCR/visual hints. Keep
 
 Quality control stage that validates final render constraints: runtime length, audio sync, subtitle readability, and carry-through of event context.
 
+QC also validates that preview and final files are non-empty, decodable, contain valid video streams, codec, dimensions, FPS, duration, and consistent metadata. Missing audio is a warning for video-only sources unless audio is explicitly expected. Publication is atomic: temporary render files are promoted only after QC succeeds.
+
 ## 5. Context-aware scene model
 
 A single narrative scene should include the entire chain of related action rather than isolated events.
@@ -179,4 +181,4 @@ Before export, the final result should pass:
 
 ## 11. Session artifacts
 
-Each production session stores source identity, stage status, normalized events, arcs, ranking, selection, timeline, output, and QC. Vision windows are independent files so successful windows can be reused during resume.
+Each production session stores source identity, stage status, normalized events, arcs, ranking, selection, timeline, output, and QC under `work/sessions/<session_id>/`. Vision windows are independent files so successful windows can be reused during resume. Cached JSON is accepted only when its minimal artifact contract is valid. Public outputs live under `output/<project_id>/`; prior current files may be archived in `runs/`, while `NO_HIGHLIGHTS` leaves no current result.

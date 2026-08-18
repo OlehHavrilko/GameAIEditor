@@ -23,16 +23,25 @@ pyinstaller.log
 # Local runtime artifacts
 input/*
 !input/.gitkeep
-output/*
-!output/.gitkeep
 work/*
 !work/.gitkeep
+output/*
+!output/.gitkeep
 finalvids/*
 !finalvids/.gitkeep
 cache/*
+generated media/
 previews/*
 *.jpg
 *.jpeg
+
+# Canonical production media contract
+input/
+work/
+output/
+finalvids/
+cache/
+generated media/
 
 # Model and media caches
 models/

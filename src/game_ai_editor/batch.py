@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -145,7 +144,7 @@ def build_batch_manifest(
     total_duration = 0.0
     for video_path in videos:
         video_id = _safe_video_id(video_path)
-        session_dir = batch_dir / "sessions" / video_id
+        session_dir = Path("work") / "sessions" / video_id
         session_dir.mkdir(parents=True, exist_ok=True)
         metadata = probe_media(video_path)
         duration = float(metadata.duration or 0.0)
@@ -192,7 +191,7 @@ def run_batch(
     style: str = "tactical",
     max_videos: int | None = None,
     resume: bool = True,
-    final_dir: str | Path = "finalvids",
+    final_dir: str | Path = "output",
     profile_path: str | Path = "config/games/arma_reforger.json",
 ) -> dict[str, Any]:
     manifest = build_batch_manifest(input_directory, work_root=work_root, dry_run=dry_run)
@@ -254,12 +253,9 @@ def _run_orchestrated_batch(
             orchestrator = ProductionOrchestrator.from_profile_path(profile_path, resume=resume)
             result = orchestrator.run(video["path"], session_dir=session_dir, max_clips=clips)
             status = result.get("status", "FAILED")
-            final_path = result.get("final_path")
-            if final_path and Path(final_path).exists():
-                target = Path(final_dir) / f"{video['video_id']}.mp4"
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(final_path, target)
-                selected_outputs.append(str(target))
+            final_path = result.get("final_output_path") or result.get("final_path")
+            if status == "SUCCESS" and final_path and Path(final_path).exists():
+                selected_outputs.append(str(final_path))
             video["status"] = status
             video["error_type"] = None
             video["error_message"] = None

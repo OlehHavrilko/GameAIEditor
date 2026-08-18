@@ -52,6 +52,7 @@ class AnalysisSession:
 
     def refresh(self) -> "AnalysisSession":
         root = Path(self.session_dir)
+        self.outputs = {}
         statuses = stage_status(root)
         complete = sum(value in {"COMPLETE", "SKIPPED"} for value in statuses.values())
         self.overall_progress = round(100.0 * complete / max(1, len(statuses)), 1)
@@ -84,9 +85,20 @@ class AnalysisSession:
             }.items()
             if path.exists()
         }
-        output = root / "output" / "montage.mp4"
-        if output.exists():
-            self.outputs["montage"] = str(output)
+        status_path = root / "status.json"
+        public_final = None
+        if status_path.exists():
+            try:
+                payload = json.loads(status_path.read_text(encoding="utf-8"))
+                public_final = payload.get("final_output_path") or payload.get("final_path")
+                public_preview = payload.get("preview_output_path") or payload.get("preview_path")
+                if public_preview:
+                    self.outputs["preview"] = str(public_preview)
+                if public_final:
+                    self.outputs["final"] = str(public_final)
+                    self.outputs["montage"] = str(public_final)
+            except (OSError, json.JSONDecodeError):
+                pass
         return self
 
 

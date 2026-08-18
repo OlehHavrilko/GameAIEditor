@@ -99,6 +99,12 @@ class AnalysisWorker(QObject):
             self.failed.emit(str(exc))
 
 
+def output_directory_from_result(result: dict) -> str | None:
+    """Return the backend-owned canonical output directory."""
+    value = result.get("output_directory")
+    return str(value) if value else None
+
+
 class ModelDownloadWorker(QObject):
     progress = Signal(object)
     finished = Signal(object)
@@ -608,8 +614,9 @@ class MainWindow(QMainWindow):
             selected = result.get("selected", [])
             lines.append(f"{Path(result.get('video', session_dir)).name}: {status}")
             lines.append(f"  Highlights: {len(selected)}")
-            if result.get("final_path"):
-                lines.append(f"  Montage: {result['final_path']}")
+            final_output_path = result.get("final_output_path") or result.get("final_path")
+            if final_output_path:
+                lines.append(f"  Montage: {final_output_path}")
             for item in selected:
                 event_type = item.get("event_type", "highlight").replace("_", " ")
                 lines.append(
@@ -681,14 +688,16 @@ class MainWindow(QMainWindow):
         profile = load_game_profile(Path(self.game_combo.currentData()))
         result = ProductionOrchestrator(profile=profile, vision_provider=None).rerender_selection(video, session_dir, self._selected_result_items())
         self.result_context.update(result)
-        self.results_view.appendPlainText(f"\nRe-render: {result.get('status')}\nMontage: {result.get('final_path', 'none')}")
+        final_output_path = result.get("final_output_path") or result.get("final_path") or "none"
+        self.results_view.appendPlainText(f"\nRe-render: {result.get('status')}\nMontage: {final_output_path}")
 
     def _open_result_folder(self) -> None:
-        if self.result_context and self.result_context.get("session_dir"):
-            os.startfile(str(Path(str(self.result_context["session_dir"])) / "output"))
+        output_directory = output_directory_from_result(self.result_context or {})
+        if output_directory:
+            os.startfile(str(output_directory))
 
     def _export_result(self) -> None:
-        final_path = self.result_context.get("final_path") if self.result_context else None
+        final_path = (self.result_context or {}).get("final_output_path") or (self.result_context or {}).get("final_path") if self.result_context else None
         if final_path:
             target, _ = QFileDialog.getSaveFileName(self, "Export montage", Path(str(final_path)).name, "MP4 video (*.mp4)")
             if target:

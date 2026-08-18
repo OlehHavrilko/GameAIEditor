@@ -228,6 +228,15 @@ def test_orchestrator_resumes_cached_artifacts(tmp_path: Path, monkeypatch) -> N
     first = ProductionOrchestrator(profile=profile, vision_provider=None).run(video, session_dir=session, max_clips=3)
     assert first["status"] == "SUCCESS"
 
+    (session / "ranking.json").write_text("{corrupted", encoding="utf-8")
+    score_calls = []
+    original_score_candidates = __import__(
+        "game_ai_editor.orchestration.orchestrator", fromlist=["score_candidates"]
+    ).score_candidates
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.score_candidates",
+        lambda *args, **kwargs: (score_calls.append(True) or original_score_candidates(*args, **kwargs)),
+    )
     monkeypatch.setattr("game_ai_editor.orchestration.orchestrator.probe_media", lambda path: (_ for _ in ()).throw(AssertionError("metadata recomputed")))
     monkeypatch.setattr("game_ai_editor.orchestration.orchestrator.analyze_audio", lambda path: (_ for _ in ()).throw(AssertionError("audio recomputed")))
     monkeypatch.setattr("game_ai_editor.orchestration.orchestrator.analyze_motion", lambda path: (_ for _ in ()).throw(AssertionError("motion recomputed")))
@@ -236,3 +245,120 @@ def test_orchestrator_resumes_cached_artifacts(tmp_path: Path, monkeypatch) -> N
 
     assert second["status"] == "SUCCESS"
     assert Path(second["final_path"]).exists()
+    assert score_calls
+
+
+def test_no_highlights_invalidates_previous_current_output(tmp_path: Path, monkeypatch) -> None:
+    video = tmp_path / "synthetic.mp4"
+    _make_video(video)
+    session = tmp_path / "session"
+    profile = load_game_profile(PROFILE_PATH)
+
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.run_prefilter",
+        lambda *args, **kwargs: {"candidates": [], "total_windows": 1},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.analyze_audio",
+        lambda path: {"has_audio": False, "segments": [], "average_intensity": 0.0, "peak_intensity": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.analyze_motion",
+        lambda path: {"samples": [], "peak_motion": 1.0, "average_motion": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.transcribe_audio",
+        lambda path: {"has_audio": False, "segments": [], "text": "", "speech_reaction": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.detect_events",
+        lambda *args: [{
+            "id": "legacy-1", "event_type": "enemy_contact", "start_time": 0.5, "end_time": 1.0,
+            "highlight_score": 70.0, "context_score": 80.0, "confidence": 0.7, "intensity": 0.7,
+        }],
+    )
+    first = ProductionOrchestrator(profile=profile, vision_provider=None, resume=False).run(video, session_dir=session)
+    assert first["status"] == "SUCCESS"
+    final_path = Path(first["final_output_path"])
+    preview_path = Path(first["preview_output_path"])
+    assert final_path.exists() and preview_path.exists()
+    original_final = final_path.read_bytes()
+    import game_ai_editor.orchestration.orchestrator as orchestrator_module
+
+    original_render_final = orchestrator_module.render_final
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.render_final",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("render failed")),
+    )
+    try:
+        ProductionOrchestrator(profile=profile, vision_provider=None, resume=False).run(video, session_dir=session)
+    except RuntimeError as exc:
+        assert str(exc) == "render failed"
+    else:
+        raise AssertionError("render failure was ignored")
+    assert final_path.read_bytes() == original_final
+    assert not final_path.with_name("final.tmp.mp4").exists()
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.render_final",
+        original_render_final,
+    )
+
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.detect_events",
+        lambda *args: [],
+    )
+    second = ProductionOrchestrator(profile=profile, vision_provider=None, resume=False).run(video, session_dir=session)
+    assert second["status"] == "NO_HIGHLIGHTS"
+    assert not final_path.exists()
+    assert not preview_path.exists()
+    status = json.loads((session / "status.json").read_text(encoding="utf-8"))
+    assert status["status"] == "NO_HIGHLIGHTS"
+    assert status["final_output_path"] is None
+
+
+def test_interrupted_vision_resumes_completed_windows(tmp_path: Path, monkeypatch) -> None:
+    video = tmp_path / "synthetic.mp4"
+    _make_video(video)
+    session = tmp_path / "session"
+    profile = load_game_profile(PROFILE_PATH)
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.run_prefilter",
+        lambda *args, **kwargs: {
+            "candidates": [
+                {"start": 0.1, "end": 0.8, "score": 0.95},
+                {"start": 0.9, "end": 1.6, "score": 0.9},
+                {"start": 1.7, "end": 2.4, "score": 0.85},
+            ],
+            "total_windows": 3,
+        },
+    )
+    monkeypatch.setattr("game_ai_editor.orchestration.orchestrator.analyze_audio", lambda path: {"has_audio": False, "segments": []})
+    monkeypatch.setattr("game_ai_editor.orchestration.orchestrator.analyze_motion", lambda path: {"samples": []})
+    monkeypatch.setattr("game_ai_editor.orchestration.orchestrator.transcribe_audio", lambda path: {"has_audio": False, "segments": []})
+    monkeypatch.setattr("game_ai_editor.orchestration.orchestrator.detect_events", lambda *args: [])
+
+    class InterruptingProvider(FakeVisionProvider):
+        calls = 0
+
+        def analyze(self, request) -> VisionResult:
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("JOB_CANCELLED")
+            return super().analyze(request)
+
+    provider = InterruptingProvider()
+    try:
+        ProductionOrchestrator(profile=profile, vision_provider=provider, resume=False).run(video, session_dir=session)
+    except RuntimeError as exc:
+        assert str(exc) == "JOB_CANCELLED"
+    else:
+        raise AssertionError("Vision interruption was ignored")
+    assert (session / "vision" / "window_000001.json").exists()
+    assert not (session / "vision" / "window_000002.json").exists()
+    interrupted_status = json.loads((session / "status.json").read_text(encoding="utf-8"))
+    assert interrupted_status["status"] == "CANCELLED"
+
+    resumed = ProductionOrchestrator(profile=profile, vision_provider=FakeVisionProvider(), resume=True).run(
+        video, session_dir=session,
+    )
+    assert resumed["status"] == "SUCCESS"

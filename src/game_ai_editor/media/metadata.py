@@ -13,6 +13,7 @@ class MediaMetadata(BaseModel):
     width: int | None = None
     height: int | None = None
     fps: float | None = None
+    video_codec: str | None = None
     video_stream: bool = False
     audio_stream: bool = False
     format_name: str | None = None
@@ -81,6 +82,7 @@ def probe_media(path: str | Path) -> MediaMetadata:
         width=int(video_stream.get("width")) if video_stream and video_stream.get("width") is not None else None,
         height=int(video_stream.get("height")) if video_stream and video_stream.get("height") is not None else None,
         fps=round(fps_value, 3) if fps_value is not None else None,
+        video_codec=video_stream.get("codec_name") if video_stream else None,
         video_stream=video_stream is not None,
         audio_stream=audio_stream is not None,
         format_name=format_info.get("format_name"),

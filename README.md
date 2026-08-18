@@ -69,7 +69,7 @@ game-ai-editor batch input
 game-ai-editor vision-scan input\video.mp4 --prefilter
 ```
 
-Batch продолжает обработку после ошибки одного видео и сохраняет session artifacts в `work/batch/`.
+Batch продолжает обработку после ошибки одного видео и сохраняет production session artifacts в `work/sessions/<session_id>/`; результаты публикуются только в canonical `output/<project_id>/`.
 
 ## AI providers
 
@@ -84,14 +84,22 @@ Ollama и LM Studio не отправляют кадры в интернет. Д
 
 В профиле Vision используются `enabled`, `provider`, `base_url`, `model`, `timeout`.
 
-## Структура проекта
+## Структура проекта и storage contract
 
-- `src/game_ai_editor/` - основной код;
-- `config/games/` - настройки игр;
-- `input/` - исходные видео;
-- `work/` - промежуточные файлы анализа;
-- `output/` и `finalvids/` - готовые видео;
+- `input/` - исходные пользовательские видео, которые не должны копироваться в Git и не должны попадать в `work/` без явной необходимости;
+- `work/` - промежуточные artifacts и session-local data, включая `work/sessions/<session_id>/...`;
+- `output/` - пользовательские готовые видео, только здесь должен жить production output;
+- `finalvids/` - legacy/deprecated compatibility directory, не использовать для новых production paths;
 - `tests/` - автоматические тесты.
+
+Canonical production output:
+
+```text
+output/<project_id>/final.mp4
+output/<project_id>/preview.mp4
+```
+
+`status.json` и backend result payload обязаны содержать абсолютный или repo-relative путь к финальному output. UI получает путь из backend artifact contract и не вычисляет его самостоятельно.
 
 Каждый запуск сохраняет JSON-файлы с метаданными, движением, транскрипцией, событиями, кандидатами, выбором моментов, таймлайном и результатами QC.
 

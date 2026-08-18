@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--style", choices=["cinematic", "tactical", "fast"], default="tactical")
     batch_parser.add_argument("--max-videos", type=int, default=None, help="Limit the number of videos processed")
     batch_parser.add_argument("--resume", action="store_true", default=True, help="Reuse completed artifacts")
-    batch_parser.add_argument("--final-dir", default="finalvids", help="Directory for the finished montage")
+    batch_parser.add_argument("--final-dir", default="output", help="Legacy compatibility directory for finished montages; canonical production output is output/<project_id>/final.mp4")
     batch_parser.add_argument("--profile", default=str(DEFAULT_PROFILE), help="Path to a custom game profile")
 
     event_parser = subparsers.add_parser("event-test", help="Convert one Vision result into Event Arcs")

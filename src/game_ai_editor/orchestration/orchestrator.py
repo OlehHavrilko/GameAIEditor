@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -16,6 +18,7 @@ from game_ai_editor.media.metadata import MediaMetadata, probe_media
 from game_ai_editor.qc.checks import run_qc
 from game_ai_editor.scoring.score import score_candidates
 from game_ai_editor.selection.selector import select_highlights
+from game_ai_editor.storage import backend_render_artifacts, ensure_project_output_dir, project_id_from_source
 from game_ai_editor.timeline.planner import build_timeline
 from game_ai_editor.transcription.whisper import transcribe_audio
 from game_ai_editor.vision.base import VisionProvider
@@ -37,6 +40,32 @@ CancellationCallback = Callable[[], bool]
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_artifact(path: Path, key: str | None = None) -> Any:
+    payload = _read_json(path)
+    if key is None:
+        if not isinstance(payload, dict):
+            raise ValueError(f"Artifact must contain an object: {path}")
+        return payload
+    value = payload.get(key) if isinstance(payload, dict) else None
+    if not isinstance(value, list):
+        raise ValueError(f"Artifact is missing a valid '{key}' field: {path}")
+    return value
+
+
+def _load_prefilter(path: Path) -> dict[str, Any]:
+    payload = _load_artifact(path)
+    if not isinstance(payload.get("candidates"), list):
+        raise ValueError(f"Prefilter artifact is missing candidates: {path}")
+    return payload
+
+
+def _load_qc(path: Path) -> dict[str, Any]:
+    payload = _load_artifact(path)
+    if not isinstance(payload.get("passed"), bool) or not isinstance(payload.get("checks"), list):
+        raise ValueError(f"QC artifact has an invalid contract: {path}")
+    return payload
 
 
 class ProductionOrchestrator:
@@ -113,19 +142,21 @@ class ProductionOrchestrator:
             self._check_cancelled()
             result = action()
         except Exception as exc:
+            error_code = self._error_code(exc)
+            interrupted = error_code == "JOB_CANCELLED"
             self._set_stage_state(
                 session_dir,
                 stage,
-                StageStatus.FAILED,
-                error_code=self._error_code(exc),
+                StageStatus.PARTIAL if interrupted else StageStatus.FAILED,
+                error_code=error_code,
                 error_type=type(exc).__name__,
                 error_message=str(exc),
             )
             self._status(
                 session_dir,
-                status="FAILED",
+                status="CANCELLED" if interrupted else "FAILED",
                 current_stage=stage,
-                error_code=self._error_code(exc),
+                error_code=error_code,
                 error_type=type(exc).__name__,
                 error_message=str(exc),
             )
@@ -200,10 +231,22 @@ class ProductionOrchestrator:
         if session_dir is not None:
             target = Path(session_dir)
         else:
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            target = Path("work") / f"{video.stem.replace(' ', '_')}_{stamp}"
+            target = Path("work") / "sessions" / project_id_from_source(video)
         target.mkdir(parents=True, exist_ok=True)
         return target
+
+    @staticmethod
+    def _invalidate_public_outputs(output_dir: Path, session: Path) -> None:
+        current = [output_dir / "final.mp4", output_dir / "preview.mp4"]
+        existing = [path for path in current if path.exists()]
+        if not existing:
+            return
+        archive_dir = output_dir / "runs" / session.name
+        if archive_dir.exists():
+            archive_dir = output_dir / "runs" / f"{session.name}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        for path in existing:
+            shutil.move(str(path), str(archive_dir / path.name))
 
     def _vision_events(self, source: Path, candidates: list[dict[str, Any]], session_dir: Path) -> list[dict[str, Any]]:
         if self.vision_provider is None or not candidates:
@@ -265,6 +308,10 @@ class ProductionOrchestrator:
         if max_clips < 1:
             raise ValueError("max_clips must be at least 1")
         session = self._session_dir(source, session_dir)
+        project_id = project_id_from_source(source)
+        public_output_dir = ensure_project_output_dir(project_id)
+        preview_output_path = public_output_dir / "preview.mp4"
+        final_output_path = public_output_dir / "final.mp4"
         identity = source_identity(source)
         fingerprint = configuration_fingerprint(self.profile, max_clips=max_clips, target_duration=target_duration)
         existing_status = session / "status.json"
@@ -282,6 +329,10 @@ class ProductionOrchestrator:
             source_identity=identity.__dict__,
             configuration_fingerprint=fingerprint,
             started_at=utc_now(),
+            project_id=project_id,
+            final_output_path=str(final_output_path),
+            preview_output_path=str(preview_output_path),
+            output_directory=str(public_output_dir),
             stages=existing_payload.get("stages") or {stage: {"status": status} for stage, status in initial_stage_statuses().items()},
             vision={
                 "enabled": self.vision_provider is not None,
@@ -305,19 +356,19 @@ class ProductionOrchestrator:
             session,
             "prefilter",
             session / "prefilter" / "candidates.json",
-            _read_json,
+            _load_prefilter,
             lambda: run_prefilter(source, output_dir=session / "prefilter"),
         )
         write_json(session / "prefilter" / "candidates.json", prefilter)
 
         audio = self._stage_cached(
-            session, "audio", session / "signals" / "audio.json", _read_json, lambda: analyze_audio(source)
+            session, "audio", session / "signals" / "audio.json", _load_artifact, lambda: analyze_audio(source)
         )
         motion = self._stage_cached(
-            session, "motion", session / "signals" / "motion.json", _read_json, lambda: analyze_motion(source)
+            session, "motion", session / "signals" / "motion.json", _load_artifact, lambda: analyze_motion(source)
         )
         transcript = self._stage_cached(
-            session, "transcription", session / "signals" / "transcript.json", _read_json, lambda: transcribe_audio(source)
+            session, "transcription", session / "signals" / "transcript.json", _load_artifact, lambda: transcribe_audio(source)
         )
         legacy_events = detect_events(metadata, audio, motion, transcript, self.profile)
         write_json(session / "signals" / "audio.json", audio)
@@ -338,7 +389,7 @@ class ProductionOrchestrator:
                 session,
                 "events",
                 cached_events_path,
-                lambda path: _read_json(path)["events"],
+                lambda path: _load_artifact(path, "events"),
                 lambda: [],
             )
             self._set_stage_state(session, "vision", StageStatus.COMPLETE if cached_events.get("vision_count", 0) else StageStatus.SKIPPED, resumed=True)
@@ -365,6 +416,10 @@ class ProductionOrchestrator:
                     lambda: self._vision_events(source, prefilter["candidates"], session),
                 )
             except (OllamaVisionError, OSError, RuntimeError) as exc:
+                if self._error_code(exc) == "JOB_CANCELLED":
+                    self._set_stage_state(session, "vision", StageStatus.PARTIAL, error_code="JOB_CANCELLED")
+                    self._status(session, status="CANCELLED", current_stage="vision", error_code="JOB_CANCELLED")
+                    raise
                 self._degrade_vision(session, exc if isinstance(exc, Exception) else RuntimeError(str(exc)))
                 vision_events = []
         elif vision_enabled:
@@ -378,7 +433,7 @@ class ProductionOrchestrator:
             session,
             "arcs",
             session / "arcs.json",
-            lambda path: _read_json(path)["arcs"],
+            lambda path: _load_artifact(path, "arcs"),
             lambda: build_event_arcs(fused),
         )
         write_json(session / "arcs.json", {"arcs": arcs})
@@ -404,7 +459,7 @@ class ProductionOrchestrator:
             session,
             "scoring",
             session / "ranking.json",
-            lambda path: _read_json(path)["candidates"],
+            lambda path: _load_artifact(path, "candidates"),
             lambda: score_candidates(arc_candidates, self.profile),
         )
         write_json(session / "ranking.json", {"candidates": scored})
@@ -412,50 +467,113 @@ class ProductionOrchestrator:
             session,
             "selection",
             session / "selection.json",
-            lambda path: _read_json(path)["selection"],
+            lambda path: _load_artifact(path, "selection"),
             lambda: select_highlights(scored, self.profile, max_count=max_clips),
         )
         if target_duration is not None:
             selected = self._limit_duration(selected, target_duration)
         write_json(session / "selection.json", {"selection": selected, "status": "NO_HIGHLIGHTS" if not selected else "READY"})
         if not selected:
-            result = {"status": "NO_HIGHLIGHTS", "session_dir": str(session), "metadata": metadata.model_dump(), "selected": []}
+            self._invalidate_public_outputs(public_output_dir, session)
+            result = {
+                "status": "NO_HIGHLIGHTS",
+                "session_dir": str(session),
+                "metadata": metadata.model_dump(),
+                "selected": [],
+                "final_output_path": None,
+                "preview_output_path": None,
+                "output_directory": str(public_output_dir),
+            }
             self._set_stage_state(session, "timeline", StageStatus.SKIPPED, error_code="NO_HIGHLIGHTS")
             self._set_stage_state(session, "render", StageStatus.SKIPPED, error_code="NO_HIGHLIGHTS")
             self._set_stage_state(session, "qc", StageStatus.SKIPPED, error_code="NO_HIGHLIGHTS")
-            self._status(session, status="NO_HIGHLIGHTS", current_stage="selection", completed_at=utc_now())
+            self._status(
+                session,
+                status="NO_HIGHLIGHTS",
+                current_stage="selection",
+                completed_at=utc_now(),
+                final_output_path=None,
+                preview_output_path=None,
+                output_directory=str(public_output_dir),
+            )
             return result
 
         timeline = self._stage_cached(
             session,
             "timeline",
             session / "timeline.json",
-            lambda path: _read_json(path)["timeline"],
+            lambda path: _load_artifact(path, "timeline"),
             lambda: build_timeline(selected, duration, self.profile),
         )
         write_json(session / "timeline.json", {"timeline": timeline})
         output_dir = session / "output"
-        def render_action() -> Path:
-            preview = build_preview(source, timeline, output_dir / "preview.mp4")
-            return render_final(preview, output_dir / "montage.mp4")
+        public_preview_path = preview_output_path
+        public_final_path = final_output_path
 
-        final = self._stage_cached(
-            session,
-            "render",
-            output_dir / "montage.mp4",
-            lambda path: path,
-            render_action,
-        )
-        qc = self._stage_cached(
-            session,
-            "qc",
-            output_dir / "qc.json",
-            _read_json,
-            lambda: run_qc(output_dir / "preview.mp4", final, source_path=source, timeline=timeline),
-        )
+        rendered_new = not (self.resume and public_preview_path.exists() and public_final_path.exists())
+        temporary_paths: tuple[Path, Path] | None = None
+
+        def render_action() -> tuple[Path, Path]:
+            temporary_preview = public_preview_path.with_name("preview.tmp.mp4")
+            temporary_final = public_final_path.with_name("final.tmp.mp4")
+            temporary_preview.unlink(missing_ok=True)
+            temporary_final.unlink(missing_ok=True)
+            try:
+                build_preview(source, timeline, temporary_preview)
+                render_final(temporary_preview, temporary_final)
+            except Exception:
+                temporary_preview.unlink(missing_ok=True)
+                temporary_final.unlink(missing_ok=True)
+                raise
+            return temporary_preview, temporary_final
+
+        if rendered_new:
+            temporary_paths = self._stage(session, "render", render_action)
+            qc = self._stage(
+                session,
+                "qc",
+                lambda: run_qc(
+                    temporary_paths[0],
+                    temporary_paths[1],
+                    source_path=source,
+                    timeline=timeline,
+                    expected_audio=bool(metadata.audio_stream),
+                ),
+            )
+            if qc.get("passed"):
+                os.replace(temporary_paths[0], public_preview_path)
+                os.replace(temporary_paths[1], public_final_path)
+            else:
+                temporary_paths[0].unlink(missing_ok=True)
+                temporary_paths[1].unlink(missing_ok=True)
+            final = public_final_path
+        else:
+            final = public_final_path
+            qc = self._stage_cached(
+                session,
+                "qc",
+                output_dir / "qc.json",
+                _load_qc,
+                lambda: run_qc(
+                    public_preview_path,
+                    final,
+                    source_path=source,
+                    timeline=timeline,
+                    expected_audio=bool(metadata.audio_stream),
+                ),
+            )
         write_json(output_dir / "qc.json", qc)
+        self._status(
+            session,
+            status="SUCCESS" if qc.get("passed") else "QC_FAILED",
+            current_stage="qc",
+            completed_at=utc_now(),
+            final_output_path=str(public_final_path),
+            preview_output_path=str(public_preview_path),
+            output_dir=str(public_output_dir),
+            output_directory=str(public_output_dir),
+        )
         status = "SUCCESS" if qc.get("passed") else "QC_FAILED"
-        self._status(session, status=status, current_stage="qc", completed_at=utc_now())
         return {
             "status": status,
             "session_dir": str(session),
@@ -465,12 +583,19 @@ class ProductionOrchestrator:
             "selected": selected,
             "timeline": timeline,
             "final_path": str(final),
+            "final_output_path": str(final),
+            "preview_output_path": str(public_preview_path),
+            "output_dir": str(public_output_dir),
             "qc": qc,
         }
 
     def rerender_selection(self, video: str | Path, session_dir: str | Path, selected: list[dict[str, Any]]) -> dict[str, Any]:
         source = Path(video).resolve()
         session = Path(session_dir)
+        project_id = project_id_from_source(source)
+        public_output_dir = ensure_project_output_dir(project_id)
+        public_preview_path = public_output_dir / "preview.mp4"
+        public_final_path = public_output_dir / "final.mp4"
         metadata = MediaMetadata.model_validate(_read_json(session / "metadata.json"))
         write_json(session / "selection.json", {"selection": selected, "status": "NO_HIGHLIGHTS" if not selected else "READY"})
         timeline_path = session / "timeline.json"
@@ -478,17 +603,74 @@ class ProductionOrchestrator:
         for artifact in (timeline_path, output_dir / "preview.mp4", output_dir / "montage.mp4", output_dir / "qc.json"):
             artifact.unlink(missing_ok=True)
         if not selected:
-            self._status(session, status="NO_HIGHLIGHTS", current_stage="selection", completed_at=utc_now())
-            return {"status": "NO_HIGHLIGHTS", "session_dir": str(session), "selected": []}
+            self._invalidate_public_outputs(public_output_dir, session)
+            self._status(
+                session,
+                status="NO_HIGHLIGHTS",
+                current_stage="selection",
+                completed_at=utc_now(),
+                final_output_path=None,
+                preview_output_path=None,
+                output_dir=str(public_output_dir),
+                output_directory=str(public_output_dir),
+            )
+            return {
+                "status": "NO_HIGHLIGHTS",
+                "session_dir": str(session),
+                "selected": [],
+                "final_output_path": None,
+                "preview_output_path": None,
+                "output_directory": str(public_output_dir),
+            }
         timeline = build_timeline(selected, float(metadata.duration or 0.0), self.profile)
         write_json(timeline_path, {"timeline": timeline})
         output_dir.mkdir(parents=True, exist_ok=True)
-        preview = build_preview(source, timeline, output_dir / "preview.mp4")
-        final = render_final(preview, output_dir / "montage.mp4")
-        qc = run_qc(output_dir / "preview.mp4", final, source_path=source, timeline=timeline)
+        temporary_preview = public_preview_path.with_name("preview.tmp.mp4")
+        temporary_final = public_final_path.with_name("final.tmp.mp4")
+        temporary_preview.unlink(missing_ok=True)
+        temporary_final.unlink(missing_ok=True)
+        try:
+            preview = build_preview(source, timeline, temporary_preview)
+            final = render_final(preview, temporary_final)
+            qc = run_qc(
+                temporary_preview,
+                final,
+                source_path=source,
+                timeline=timeline,
+                expected_audio=bool(metadata.audio_stream),
+            )
+            if qc.get("passed"):
+                os.replace(temporary_preview, public_preview_path)
+                os.replace(temporary_final, public_final_path)
+        except Exception:
+            temporary_preview.unlink(missing_ok=True)
+            temporary_final.unlink(missing_ok=True)
+            raise
+        finally:
+            temporary_preview.unlink(missing_ok=True)
+            temporary_final.unlink(missing_ok=True)
         write_json(output_dir / "qc.json", qc)
-        self._status(session, status="SUCCESS" if qc.get("passed") else "QC_FAILED", current_stage="qc", completed_at=utc_now())
-        return {"status": "SUCCESS" if qc.get("passed") else "QC_FAILED", "session_dir": str(session), "selected": selected, "timeline": timeline, "final_path": str(final), "qc": qc}
+        self._status(
+            session,
+            status="SUCCESS" if qc.get("passed") else "QC_FAILED",
+            current_stage="qc",
+            completed_at=utc_now(),
+            final_output_path=str(public_final_path),
+            preview_output_path=str(public_preview_path),
+            output_dir=str(public_output_dir),
+            output_directory=str(public_output_dir),
+        )
+        return {
+            "status": "SUCCESS" if qc.get("passed") else "QC_FAILED",
+            "session_dir": str(session),
+            "selected": selected,
+            "timeline": timeline,
+            "final_path": str(final),
+            "final_output_path": str(final),
+            "preview_output_path": str(public_preview_path),
+            "output_dir": str(public_output_dir),
+            "qc": qc,
+        }
 
     @staticmethod
     def _limit_duration(selection: list[dict[str, Any]], target_duration: float) -> list[dict[str, Any]]:

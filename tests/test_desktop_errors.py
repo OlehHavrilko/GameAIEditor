@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from game_ai_editor.desktop.app import output_directory_from_result
 from game_ai_editor.desktop.errors import ERROR_PRESENTATIONS, ErrorPresenter
 
 
@@ -28,3 +29,11 @@ def test_error_presenter_maps_known_codes() -> None:
 def test_error_presenter_handles_unknown_code() -> None:
     presentation = ErrorPresenter.presentation_for("UNKNOWN_MAGIC_CODE")
     assert presentation.title == "Unexpected error"
+
+
+def test_output_directory_comes_from_backend_result() -> None:
+    result = {
+        "output_directory": "D:/repo/output/source-id",
+        "session_dir": "D:/repo/work/sessions/source-id",
+    }
+    assert output_directory_from_result(result) == "D:/repo/output/source-id"
