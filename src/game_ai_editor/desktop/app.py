@@ -697,7 +697,7 @@ class MainWindow(QMainWindow):
     def _open_result_folder(self) -> None:
         output_directory = output_directory_from_result(self.result_context or {})
         if output_directory:
-            os.startfile(str(output_directory))
+            os.startfile(str(output_directory))  # type: ignore[attr-defined]
 
     def _export_result(self) -> None:
         final_path = (self.result_context or {}).get("final_output_path") or (self.result_context or {}).get("final_path") if self.result_context else None
