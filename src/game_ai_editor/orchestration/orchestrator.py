@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, cast
 
 from game_ai_editor.analysis.motion import analyze_motion
 from game_ai_editor.audio.analysis import analyze_audio
@@ -18,21 +19,35 @@ from game_ai_editor.media.metadata import MediaMetadata, probe_media
 from game_ai_editor.qc.checks import run_qc
 from game_ai_editor.scoring.score import score_candidates
 from game_ai_editor.selection.selector import select_highlights
-from game_ai_editor.storage import backend_render_artifacts, ensure_project_output_dir, project_id_from_source
+from game_ai_editor.storage import (
+    ensure_project_output_dir,
+    project_id_from_source,
+)
 from game_ai_editor.timeline.planner import build_timeline
 from game_ai_editor.transcription.whisper import transcribe_audio
 from game_ai_editor.vision.base import VisionProvider
 from game_ai_editor.vision.factory import create_vision_provider
 from game_ai_editor.vision.models import VisionRequest
-from game_ai_editor.vision.ollama import OllamaModelError, OllamaUnavailableError, OllamaVisionError
+from game_ai_editor.vision.ollama import (
+    OllamaModelError,
+    OllamaUnavailableError,
+    OllamaVisionError,
+)
 from game_ai_editor.vision.prefilter import run_prefilter
 from game_ai_editor.vision.prompts import COARSE_SCAN_PROMPT
 from game_ai_editor.vision.sampler import sample_scene_frames
 
 from .fusion import fuse_events, normalize_events
 from .models import StageStatus
-from .state import STAGES, configuration_fingerprint, initial_stage_statuses, source_identity, source_matches, utc_now, write_json
-
+from .state import (
+    STAGES,
+    configuration_fingerprint,
+    initial_stage_statuses,
+    source_identity,
+    source_matches,
+    utc_now,
+    write_json,
+)
 
 ProgressCallback = Callable[[str, str, dict[str, Any]], None]
 CancellationCallback = Callable[[], bool]
@@ -46,26 +61,26 @@ def _load_artifact(path: Path, key: str | None = None) -> Any:
     payload = _read_json(path)
     if key is None:
         if not isinstance(payload, dict):
-            raise ValueError(f"Artifact must contain an object: {path}")
+            raise TypeError(f"Artifact must contain an object: {path}")
         return payload
     value = payload.get(key) if isinstance(payload, dict) else None
     if not isinstance(value, list):
-        raise ValueError(f"Artifact is missing a valid '{key}' field: {path}")
+        raise TypeError(f"Artifact is missing a valid '{key}' field: {path}")
     return value
 
 
 def _load_prefilter(path: Path) -> dict[str, Any]:
     payload = _load_artifact(path)
     if not isinstance(payload.get("candidates"), list):
-        raise ValueError(f"Prefilter artifact is missing candidates: {path}")
-    return payload
+        raise TypeError(f"Prefilter artifact is missing candidates: {path}")
+    return cast("dict[str, Any]", payload)
 
 
 def _load_qc(path: Path) -> dict[str, Any]:
     payload = _load_artifact(path)
     if not isinstance(payload.get("passed"), bool) or not isinstance(payload.get("checks"), list):
-        raise ValueError(f"QC artifact has an invalid contract: {path}")
-    return payload
+        raise TypeError(f"QC artifact has an invalid contract: {path}")
+    return cast("dict[str, Any]", payload)
 
 
 class ProductionOrchestrator:
@@ -91,7 +106,7 @@ class ProductionOrchestrator:
         *,
         progress: ProgressCallback | None = None,
         resume: bool = True,
-    ) -> "ProductionOrchestrator":
+    ) -> ProductionOrchestrator:
         profile = load_game_profile(profile_path)
         provider = create_vision_provider(profile.vision) if profile.vision.enabled else None
         return cls(profile=profile, vision_provider=provider, progress=progress, resume=resume)
@@ -243,7 +258,7 @@ class ProductionOrchestrator:
             return
         archive_dir = output_dir / "runs" / session.name
         if archive_dir.exists():
-            archive_dir = output_dir / "runs" / f"{session.name}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            archive_dir = output_dir / "runs" / f"{session.name}_{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
         archive_dir.mkdir(parents=True, exist_ok=True)
         for path in existing:
             shutil.move(str(path), str(archive_dir / path.name))
@@ -390,7 +405,7 @@ class ProductionOrchestrator:
                 "events",
                 cached_events_path,
                 lambda path: _load_artifact(path, "events"),
-                lambda: [],
+                list,
             )
             self._set_stage_state(session, "vision", StageStatus.COMPLETE if cached_events.get("vision_count", 0) else StageStatus.SKIPPED, resumed=True)
             vision_enabled = False

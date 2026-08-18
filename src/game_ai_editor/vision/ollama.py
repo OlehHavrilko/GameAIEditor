@@ -4,6 +4,7 @@ import base64
 import json
 import time
 from pathlib import Path
+from typing import Any
 from urllib import error, request
 
 from pydantic import ValidationError
@@ -127,7 +128,7 @@ class OllamaVisionProvider(VisionProvider):
             ) from exc
 
 
-def _parse_model_json(content: str) -> dict:
+def _parse_model_json(content: str) -> dict[str, Any]:
     cleaned = content.strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.removeprefix("```json").removeprefix("```").strip()

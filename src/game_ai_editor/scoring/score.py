@@ -10,7 +10,7 @@ def _as_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def score_event(event: dict, profile: Any) -> float:
+def score_event(event: dict[str, Any], profile: Any) -> float:
     weights = profile.scoring_weights.model_dump()
     intensity = _as_float(event.get("intensity", 0.0))
     kills = _as_float(event.get("kill_count", 0.0))
@@ -36,8 +36,8 @@ def score_event(event: dict, profile: Any) -> float:
     return round(float(score), 4)
 
 
-def score_candidates(events: list[dict], profile: Any) -> list[dict]:
-    scored: list[dict] = []
+def score_candidates(events: list[dict[str, Any]], profile: Any) -> list[dict[str, Any]]:
+    scored: list[dict[str, Any]] = []
     for event in events:
         candidate = dict(event)
         candidate["score"] = score_event(candidate, profile)

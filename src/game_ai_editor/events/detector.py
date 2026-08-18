@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from typing import Any
 
 
-def _sample_at_time(samples: list[dict], target_time: float, field_name: str = "score") -> float:
+def _sample_at_time(samples: list[dict[str, Any]], target_time: float, field_name: str = "score") -> float:
     if not samples:
         return 0.0
     nearest = min(samples, key=lambda item: abs(float(item.get("time", 0.0)) - target_time))
@@ -13,8 +12,8 @@ def _sample_at_time(samples: list[dict], target_time: float, field_name: str = "
     return float(value)
 
 
-def _cluster_segments(samples: list[dict], duration: float, threshold: float) -> list[dict]:
-    clusters: list[dict] = []
+def _cluster_segments(samples: list[dict[str, Any]], duration: float, threshold: float) -> list[dict[str, Any]]:
+    clusters: list[dict[str, Any]] = []
     active = None
     for sample in samples:
         value = float(sample.get("intensity", 0.0))
@@ -41,7 +40,7 @@ def _cluster_segments(samples: list[dict], duration: float, threshold: float) ->
     return clusters
 
 
-def detect_events(metadata: Any, audio_summary: dict, motion_summary: dict, transcript_summary: dict, profile: Any) -> list[dict]:
+def detect_events(metadata: Any, audio_summary: dict[str, Any], motion_summary: dict[str, Any], transcript_summary: dict[str, Any], profile: Any) -> list[dict[str, Any]]:
     duration = float(metadata.duration or 0.0)
     if duration <= 0:
         return []
@@ -55,7 +54,7 @@ def detect_events(metadata: Any, audio_summary: dict, motion_summary: dict, tran
 
     signal_samples = []
     step_size = 0.1
-    for step in [index * step_size for index in range(int(math.ceil(duration / step_size)) + 1)]:
+    for step in [index * step_size for index in range(math.ceil(duration / step_size) + 1)]:
         motion_score = _sample_at_time(motion_samples, step, "score")
         motion_peak = float(motion_summary.get("peak_motion", 1.0) or 1.0)
         if motion_peak <= 0:
@@ -69,16 +68,17 @@ def detect_events(metadata: Any, audio_summary: dict, motion_summary: dict, tran
             start = float(segment.get("start", 0.0))
             end = float(segment.get("end", 0.0))
             text = str(segment.get("text", "")).lower()
-            if start <= step <= end or (start <= step + 0.5 and step <= end + 0.5):
-                if any(keyword in text for keyword in ["nice", "damn", "oh", "shit", "great", "kill", "wow", "go", "fire"]):
-                    speech_reaction = 1.0
-                    break
+            if (start <= step <= end or (start <= step + 0.5 and step <= end + 0.5)) and any(
+                keyword in text for keyword in ["nice", "damn", "oh", "shit", "great", "kill", "wow", "go", "fire"]
+            ):
+                speech_reaction = 1.0
+                break
         motion_boost = max(0.0, (motion_norm - 0.55)) * 0.45
         intensity = (0.55 * motion_norm) + (0.25 * audio_norm) + (0.15 * speech_reaction) + motion_boost
         signal_samples.append({"time": round(step, 3), "intensity": round(intensity, 6), "motion": round(motion_norm, 6), "audio": round(audio_norm, 6), "speech": round(speech_reaction, 6)})
 
     clusters = _cluster_segments(signal_samples, duration, narrative_threshold)
-    events: list[dict] = []
+    events: list[dict[str, Any]] = []
 
     for index, cluster in enumerate(clusters):
         start_time = float(cluster.get("start", 0.0))

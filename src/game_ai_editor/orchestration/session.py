@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,7 @@ from .state import stage_status
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -50,7 +50,7 @@ class AnalysisSession:
     outputs: dict[str, str] = field(default_factory=dict)
     job: Job | None = None
 
-    def refresh(self) -> "AnalysisSession":
+    def refresh(self) -> AnalysisSession:
         root = Path(self.session_dir)
         self.outputs = {}
         statuses = stage_status(root)

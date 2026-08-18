@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3.0", "ruff>=0.5.0"]
+dev = ["pytest>=8.3.0", "ruff>=0.5.0", "mypy>=1.10.0"]
 
 [project.scripts]
 game-ai-editor = "game_ai_editor.cli:main"
@@ -28,6 +28,12 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.coverage.run]
+omit = ["src/game_ai_editor/desktop/*"]
+
+[tool.coverage.report]
+fail_under = 70
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

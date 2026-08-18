@@ -6,7 +6,6 @@ from typing import Any
 
 from .arcs import build_event_arcs, classify_event_quality
 
-
 _CONTEXT_SCORES = {
     "movement": 5.0,
     "walking": 5.0,

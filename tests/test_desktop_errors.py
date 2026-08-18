@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from game_ai_editor.desktop.app import output_directory_from_result
-from game_ai_editor.desktop.errors import ERROR_PRESENTATIONS, ErrorPresenter
+from game_ai_editor.desktop.errors import ErrorPresenter
 
 
 def test_error_presenter_maps_known_codes() -> None:

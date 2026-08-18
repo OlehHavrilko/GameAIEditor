@@ -9,10 +9,14 @@ import numpy as np
 from game_ai_editor.config.loader import load_game_profile
 from game_ai_editor.orchestration.fusion import fuse_events, normalize_events
 from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
-from game_ai_editor.orchestration.state import configuration_fingerprint, source_identity, source_matches, stage_status
-from game_ai_editor.vision.ollama import OllamaUnavailableError
+from game_ai_editor.orchestration.state import (
+    configuration_fingerprint,
+    source_identity,
+    source_matches,
+    stage_status,
+)
 from game_ai_editor.vision.models import VisionResult
-
+from game_ai_editor.vision.ollama import OllamaUnavailableError
 
 PROFILE_PATH = Path(__file__).resolve().parents[1] / "config/games/arma_reforger.json"
 

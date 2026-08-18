@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def _segments_overlap(left: dict, right: dict, min_gap_seconds: float) -> bool:
+def _segments_overlap(left: dict[str, Any], right: dict[str, Any], min_gap_seconds: float) -> bool:
     left_start = float(left.get("start_time", 0.0))
     left_end = float(left.get("end_time", 0.0))
     right_start = float(right.get("start_time", 0.0))
@@ -12,11 +12,11 @@ def _segments_overlap(left: dict, right: dict, min_gap_seconds: float) -> bool:
 
 
 def select_highlights(
-    candidates: list[dict],
+    candidates: list[dict[str, Any]],
     profile: Any,
     max_count: int = 5,
     target_duration: float | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     gap_seconds = float(profile.scene_model.get("minimum_event_gap_seconds", 1.5))
     ignored = {str(value).casefold() for value in profile.ignored_events}
     ranked = sorted(
@@ -32,7 +32,7 @@ def select_highlights(
         key=lambda item: float(item.get("score", 0.0)),
         reverse=True,
     )
-    selected: list[dict] = []
+    selected: list[dict[str, Any]] = []
     total_duration = 0.0
 
     for candidate in ranked:

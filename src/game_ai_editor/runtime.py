@@ -6,10 +6,11 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, cast
 from urllib import error, request
 
 
@@ -80,6 +81,7 @@ class OllamaRuntimeManager:
         owned_running = owned_process is not None and owned_process.poll() is None
 
         if owned_running:
+            assert owned_process is not None
             if not self._healthcheck():
                 return RuntimeSnapshot(
                     state=RuntimeState.STARTING,
@@ -410,7 +412,7 @@ def _http_json(url: str, *, timeout: float) -> dict[str, Any]:
     http_request = request.Request(url, method="GET")
     try:
         with request.urlopen(http_request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return cast("dict[str, Any]", json.loads(response.read().decode("utf-8")))
     except (error.URLError, OSError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError(str(exc)) from exc
 

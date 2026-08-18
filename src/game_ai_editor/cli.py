@@ -6,7 +6,12 @@ import logging
 from pathlib import Path
 
 from game_ai_editor.batch import run_batch
+from game_ai_editor.diagnostics import collect_system_diagnostics
 from game_ai_editor.events.vision_adapter import run_event_test
+from game_ai_editor.runtime import OllamaRuntimeManager
+from game_ai_editor.vision.poc import run_vision_test
+from game_ai_editor.vision.prefilter import run_prefilter
+from game_ai_editor.vision.scan import run_vision_scan
 from game_ai_editor.workflow import (
     analyze_video,
     benchmark_motion_video,
@@ -17,12 +22,6 @@ from game_ai_editor.workflow import (
     run_all_pipeline,
     select_highlights_for_session,
 )
-from game_ai_editor.vision.poc import run_vision_test
-from game_ai_editor.vision.prefilter import run_prefilter
-from game_ai_editor.vision.scan import run_vision_scan
-from game_ai_editor.diagnostics import collect_system_diagnostics
-from game_ai_editor.runtime import OllamaRuntimeManager
-
 
 LOGGER = logging.getLogger("game_ai_editor")
 DEFAULT_PROFILE = Path("config/games/arma_reforger.json")
@@ -132,13 +131,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "detect":
-            result = detect_candidates(args.session, profile_path=args.profile)
-            LOGGER.info("Detected %d candidates in %s", len(result), args.session)
+            candidates = detect_candidates(args.session, profile_path=args.profile)
+            LOGGER.info("Detected %d candidates in %s", len(candidates), args.session)
             return 0
 
         if args.command == "select":
-            result = select_highlights_for_session(args.session, profile_path=args.profile)
-            LOGGER.info("Selected %d highlights in %s", len(result), args.session)
+            selected = select_highlights_for_session(args.session, profile_path=args.profile)
+            LOGGER.info("Selected %d highlights in %s", len(selected), args.session)
             return 0
 
         if args.command == "edit":
@@ -147,13 +146,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "render":
-            result = render_session(args.session)
-            LOGGER.info("Final MP4 rendered: %s", result)
+            final_path = render_session(args.session)
+            LOGGER.info("Final MP4 rendered: %s", final_path)
             return 0
 
         if args.command == "qc":
-            result = qc_session(args.session)
-            LOGGER.info("QC passed: %s", result["passed"])
+            qc = qc_session(args.session)
+            LOGGER.info("QC passed: %s", qc["passed"])
             return 0
 
         if args.command == "benchmark-motion":
@@ -289,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"Unsupported command: {args.command}")
         return 2
     except Exception as exc:  # pragma: no cover - CLI error path
-        LOGGER.exception("Game AI Editor failed: %s", exc)
+        LOGGER.exception("Game AI Editor failed")
         print(f"ERROR: {exc}", flush=True)
         return 1
 

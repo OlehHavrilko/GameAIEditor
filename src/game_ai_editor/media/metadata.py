@@ -25,11 +25,11 @@ def _parse_fraction(value: str | None) -> float | None:
         return None
     try:
         numerator, denominator = value.split("/")
-        numerator = float(numerator)
-        denominator = float(denominator)
-        if denominator == 0:
+        num = float(numerator)
+        den = float(denominator)
+        if den == 0:
             return None
-        return numerator / denominator
+        return num / den
     except ValueError:
         try:
             return float(value)

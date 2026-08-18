@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
-import subprocess
-import sys
 
 from game_ai_editor.analysis.motion import analyze_motion
 from game_ai_editor.audio.analysis import analyze_audio

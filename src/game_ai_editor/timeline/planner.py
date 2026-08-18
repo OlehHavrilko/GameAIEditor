@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_timeline(selection: list[dict], duration: float, profile: Any) -> list[dict]:
-    timeline: list[dict] = []
+def build_timeline(selection: list[dict[str, Any]], duration: float, profile: Any) -> list[dict[str, Any]]:
+    timeline: list[dict[str, Any]] = []
     scene_defaults = profile.scene_model
     for index, segment in enumerate(sorted(selection, key=lambda item: float(item.get("start_time", 0.0)))):
         event_type = str(segment.get("event_type", "default"))

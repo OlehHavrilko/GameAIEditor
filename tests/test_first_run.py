@@ -35,8 +35,9 @@ def test_first_run_shows_degraded_mode_when_ollama_missing(_qapp) -> None:
             {"status": "READY", "name": "FFmpeg", "value": "ready"},
         ]
     }
-    with patch.object(runtime, "detect", return_value=snapshot):
-        with patch("game_ai_editor.desktop.app.collect_system_diagnostics", return_value=diagnostics):
+    with patch.object(runtime, "detect", return_value=snapshot), patch(
+        "game_ai_editor.desktop.app.collect_system_diagnostics", return_value=diagnostics
+    ):
             dialog = FirstRunDialog(runtime)
             layout = dialog.layout()
             texts = [

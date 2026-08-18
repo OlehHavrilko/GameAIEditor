@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 import numpy as np
@@ -13,7 +14,11 @@ from game_ai_editor.vision.models import VisionRequest
 from game_ai_editor.vision.ollama import OllamaVisionProvider
 from game_ai_editor.vision.poc import run_vision_test
 from game_ai_editor.vision.prefilter import analyze_prefilter
-from game_ai_editor.vision.scan import filter_candidates, run_vision_scan, split_video_windows
+from game_ai_editor.vision.scan import (
+    filter_candidates,
+    run_vision_scan,
+    split_video_windows,
+)
 
 
 class FakeHTTPResponse(io.BytesIO):
@@ -109,7 +114,7 @@ def test_vision_test_writes_structured_result_without_network(tmp_path: Path) ->
         extraction_time_seconds = 0.01
         inference_time_seconds = 0.02
         total_time_seconds = 0.03
-        frame_dimensions = []
+        frame_dimensions: ClassVar[list] = []
         frame_count = 2
         response_size_bytes = 10
 

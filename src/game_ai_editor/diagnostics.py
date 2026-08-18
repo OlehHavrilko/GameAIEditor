@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import platform
 import shutil
 import subprocess
@@ -61,7 +60,7 @@ def _memory_check() -> DiagnosticCheck:
 
 def _gpu_check() -> DiagnosticCheck:
     try:
-        import torch  # type: ignore
+        import torch
     except ImportError:
         return DiagnosticCheck("GPU", "UNKNOWN", "Unavailable", "Torch is not installed.")
     try:
@@ -70,5 +69,5 @@ def _gpu_check() -> DiagnosticCheck:
         device = torch.cuda.get_device_properties(0)
         memory_gb = device.total_memory / (1024 ** 3)
         return DiagnosticCheck("GPU", "READY", f"{device.name}, {memory_gb:.1f} GB VRAM")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort GPU probe
         return DiagnosticCheck("GPU", "UNKNOWN", "Unavailable", str(exc))

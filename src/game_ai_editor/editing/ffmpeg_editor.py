@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 
 def run_ffmpeg(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -11,7 +12,7 @@ def run_ffmpeg(command: list[str]) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def build_preview(source_path: str | Path, timeline: list[dict], output_path: str | Path) -> Path:
+def build_preview(source_path: str | Path, timeline: list[dict[str, Any]], output_path: str | Path) -> Path:
     source = Path(source_path)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)

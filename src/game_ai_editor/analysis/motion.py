@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 import cv2
 
@@ -12,7 +13,7 @@ def analyze_motion(
     sample_fps: float = 2.0,
     use_cpu: bool = True,
     benchmark: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     input_path = Path(path)
     cap = cv2.VideoCapture(str(input_path))
     if not cap.isOpened():
@@ -21,14 +22,14 @@ def analyze_motion(
     source_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     processing_fps = source_fps if source_fps <= 0 else min(max(float(sample_fps or source_fps), 2.0), source_fps)
-    sample_interval = 1 if source_fps <= 0 or processing_fps >= source_fps else max(1, int(round(source_fps / processing_fps)))
+    sample_interval = 1 if source_fps <= 0 or processing_fps >= source_fps else max(1, round(source_fps / processing_fps))
 
     prev_gray = None
     frame_index = 0
     sample_count = 0
     total_motion = 0.0
-    samples: list[dict] = []
-    segments: list[dict] = []
+    samples: list[dict[str, Any]] = []
+    segments: list[dict[str, Any]] = []
     active_start = None
     active_end = None
     active_max = 0.0
@@ -59,6 +60,7 @@ def analyze_motion(
             active_end = timestamp
             active_max = max(active_max, score)
         elif active_start is not None:
+            assert active_end is not None
             segments.append(
                 {
                     "start": round(active_start, 3),
@@ -74,6 +76,7 @@ def analyze_motion(
         frame_index += 1
 
     if active_start is not None:
+        assert active_end is not None
         segments.append(
             {
                 "start": round(active_start, 3),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 from .models import VisionRequest
 from .ollama import OllamaVisionProvider
@@ -21,7 +22,7 @@ def run_vision_test(
     max_frames: int = 5,
     width: int = 512,
     height: int = 288,
-) -> dict:
+) -> dict[str, Any]:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     total_started = time.perf_counter()

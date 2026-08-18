@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from PySide6.QtWidgets import (
-    QApplication,
     QDialog,
     QDialogButtonBox,
     QLabel,
@@ -137,7 +136,7 @@ class ErrorPresenter:
         on_action: Callable[[], None] | None = None,
         on_continue_without_ai: Callable[[], None] | None = None,
     ) -> bool:
-        presentation = ERROR_PRESENTATIONS.get(error_code) or ErrorPresentation(
+        presentation = ERROR_PRESENTATIONS.get(error_code or "") or ErrorPresentation(
             title="Unexpected error",
             description=technical_message or "An unknown error occurred.",
             technical=technical_message,
@@ -145,7 +144,12 @@ class ErrorPresenter:
         self.last_error_code = error_code
         dialog = ErrorDialog(presentation, error_code=error_code, parent=self.parent)
         if dialog.action_button and on_action:
-            dialog.action_button.clicked.connect(lambda: (dialog.accept(), on_action()))
+
+            def _on_action_clicked() -> None:
+                dialog.accept()
+                on_action()
+
+            dialog.action_button.clicked.connect(_on_action_clicked)
         if dialog.cancel_without_ai and on_continue_without_ai:
             return True
         dialog.exec()

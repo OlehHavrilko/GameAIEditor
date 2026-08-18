@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from .base import VisionProvider
 from .models import VisionRequest, VisionResult
-from .ollama import OllamaVisionError, OllamaUnavailableError, VisionInvalidJSONError
+from .ollama import OllamaUnavailableError, OllamaVisionError, VisionInvalidJSONError
 from .prompts import ARMA_REFORGER_PROMPT
 
 

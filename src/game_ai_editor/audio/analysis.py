@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import math
 import subprocess
 import wave
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from game_ai_editor.media.metadata import probe_media
 
 
-def analyze_audio(path: str | Path, window_seconds: float = 1.0) -> dict:
+def analyze_audio(path: str | Path, window_seconds: float = 1.0) -> dict[str, Any]:
     input_path = Path(path)
     metadata = probe_media(input_path)
     if not metadata.audio_stream:
@@ -59,17 +59,17 @@ def analyze_audio(path: str | Path, window_seconds: float = 1.0) -> dict:
                     continue
 
                 if channels > 1:
-                    samples = samples.reshape(-1, channels)
-                    samples = samples.mean(axis=1)
+                    samples_2d = samples.reshape(-1, channels)
+                    samples = samples_2d.mean(axis=1)
                 rms = float(np.sqrt(np.mean(np.square(samples))))
                 values.append(rms)
 
         segments = []
         for index, intensity in enumerate(values):
-            start = index * window_seconds
-            end = min(start + window_seconds, metadata.duration or start + window_seconds)
+            seg_start = index * window_seconds
+            end = min(seg_start + window_seconds, metadata.duration or seg_start + window_seconds)
             segments.append({
-                "start": round(start, 3),
+                "start": round(seg_start, 3),
                 "end": round(end, 3),
                 "intensity": round(float(intensity), 6),
             })

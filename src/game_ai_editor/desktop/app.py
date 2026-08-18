@@ -1,20 +1,11 @@
 from __future__ import annotations
 
-import sys
 import os
 import shutil
+import sys
 import threading
 from pathlib import Path
-
-from game_ai_editor.batch import SUPPORTED_EXTENSIONS, discover_videos
-from game_ai_editor.config.loader import load_game_profile
-from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
-from game_ai_editor.orchestration.session import AnalysisQueue
-from game_ai_editor.orchestration.state import STAGES as PIPELINE_STAGES
-from game_ai_editor.diagnostics import collect_system_diagnostics
-from game_ai_editor.desktop.errors import ErrorPresenter
-from game_ai_editor.runtime import RuntimeState
-from game_ai_editor.vision.factory import create_vision_provider
+from typing import Any, cast
 
 from PySide6.QtCore import QObject, QSettings, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
@@ -32,14 +23,24 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
-    QPushButton,
-    QProgressBar,
     QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from game_ai_editor.batch import SUPPORTED_EXTENSIONS, discover_videos
+from game_ai_editor.config.loader import load_game_profile
+from game_ai_editor.desktop.errors import ErrorPresenter
+from game_ai_editor.diagnostics import collect_system_diagnostics
+from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
+from game_ai_editor.orchestration.session import AnalysisQueue, AnalysisSession
+from game_ai_editor.orchestration.state import STAGES as PIPELINE_STAGES
+from game_ai_editor.runtime import OllamaRuntimeManager, RuntimeSnapshot, RuntimeState
+from game_ai_editor.vision.factory import create_vision_provider
 
 
 class AnalysisWorker(QObject):
@@ -49,7 +50,7 @@ class AnalysisWorker(QObject):
     failed = Signal(str)
     cancelled = Signal()
 
-    def __init__(self, videos: list[Path], profile_path: Path, provider_values: dict[str, str], max_clips: int) -> None:
+    def __init__(self, videos: list[Path], profile_path: Path, provider_values: dict[str, str | None], max_clips: int) -> None:
         super().__init__()
         self.videos = videos
         self.profile_path = profile_path
@@ -63,7 +64,7 @@ class AnalysisWorker(QObject):
 
     @Slot()
     def run(self) -> None:
-        results: list[dict] = []
+        results: list[dict[str, Any]] = []
         try:
             profile = load_game_profile(self.profile_path)
             profile.vision.enabled = True
@@ -75,7 +76,7 @@ class AnalysisWorker(QObject):
                 if self.abort_requested.is_set():
                     self.cancelled.emit()
                     return
-                def on_progress(stage: str, status: str, details: dict, current=index) -> None:
+                def on_progress(stage: str, status: str, details: dict[str, Any], current: int = index) -> None:
                     self.item_progress.emit(current, stage, status)
                     self.progress.emit(stage, status, details)
 
@@ -89,17 +90,17 @@ class AnalysisWorker(QObject):
                     result = orchestrator.run(video, max_clips=self.max_clips)
                     result["video"] = str(video)
                     results.append(result)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - worker-level isolation boundary
                     if self.abort_requested.is_set() or str(exc) == "JOB_CANCELLED":
                         self.cancelled.emit()
                         return
                     results.append({"status": "FAILED", "video": str(video), "error": str(exc)})
             self.finished.emit(results)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - worker-level isolation boundary
             self.failed.emit(str(exc))
 
 
-def output_directory_from_result(result: dict) -> str | None:
+def output_directory_from_result(result: dict[str, Any]) -> str | None:
     """Return the backend-owned canonical output directory."""
     value = result.get("output_directory")
     return str(value) if value else None
@@ -168,7 +169,7 @@ class MainWindow(QMainWindow):
         self.resize(980, 700)
         self.videos: list[Path] = []
         default_profile = load_game_profile(Path("config/games/arma_reforger.json"))
-        self.thread: QThread | None = None
+        self.analysis_thread: QThread | None = None
         self.worker: AnalysisWorker | None = None
         self.download_thread: QThread | None = None
         self.download_worker: ModelDownloadWorker | None = None
@@ -371,7 +372,7 @@ class MainWindow(QMainWindow):
                 self.queue.addItem(item)
         self._update_dashboard()
 
-    def _selected_session(self):
+    def _selected_session(self) -> AnalysisSession | None:
         item = self.queue.currentItem()
         if item is None:
             return None
@@ -455,7 +456,7 @@ class MainWindow(QMainWindow):
                 checker()
             self.runtime_status_label.setText("READY")
             self.runtime_detail_label.setText("Endpoint responded and the configured model is available.")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - availability probe isolation
             self.runtime_status_label.setText("OFFLINE")
             self.runtime_detail_label.setText(str(exc))
         self._update_dashboard()
@@ -559,21 +560,21 @@ class MainWindow(QMainWindow):
         self.cancel_analysis_button.setEnabled(True)
         self.progress.setValue(0)
         self.stage_label.setText("Preparing analysis...")
-        self.thread = QThread(self)
+        self.analysis_thread = QThread(self)
         self.worker = AnalysisWorker(
             self.videos,
             Path(self.game_combo.currentData()),
             self._provider_config(),
             self.clip_count.value(),
         )
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
+        self.worker.moveToThread(self.analysis_thread)
+        self.analysis_thread.started.connect(self.worker.run)
         self.worker.item_progress.connect(self._update_item)
         self.worker.progress.connect(self._update_progress)
         self.worker.finished.connect(self._analysis_finished)
         self.worker.failed.connect(self._analysis_failed)
         self.worker.cancelled.connect(self._analysis_cancelled)
-        self.thread.start()
+        self.analysis_thread.start()
 
     @Slot(int, str, str)
     def _update_item(self, index: int, stage: str, status: str) -> None:
@@ -585,7 +586,7 @@ class MainWindow(QMainWindow):
                 self.stage_list.item(stage_index).setText(f"{stage}: {status}")
 
     @Slot(str, str, dict)
-    def _update_progress(self, stage: str, status: str, details: dict) -> None:
+    def _update_progress(self, stage: str, status: str, details: dict[str, Any]) -> None:
         stage_title = f"{stage}: {status}"
         if details.get("error_code"):
             stage_title = f"{stage}: {status} ({details['error_code']})"
@@ -604,7 +605,7 @@ class MainWindow(QMainWindow):
             self.progress.setValue(max(0, min(100, int(completed * 100))))
 
     @Slot(list)
-    def _analysis_finished(self, results: list) -> None:
+    def _analysis_finished(self, results: list[dict[str, Any]]) -> None:
         self.progress.setValue(100)
         self.stage_label.setText(f"Completed: {sum(item.get('status') == 'SUCCESS' for item in results)} / {len(results)}")
         lines: list[str] = []
@@ -648,12 +649,12 @@ class MainWindow(QMainWindow):
         self._refresh_ai_status()
         self._stop_worker()
 
-    def _selected_result_items(self) -> list[dict]:
+    def _selected_result_items(self) -> list[dict[str, Any]]:
         if not self.result_context:
             return []
-        return list(self.result_context.get("selected", []))
+        return cast("list[dict[str, Any]]", self.result_context.get("selected", []))
 
-    def _refresh_result_items(self, selected: list[dict]) -> None:
+    def _refresh_result_items(self, selected: list[dict[str, Any]]) -> None:
         self.results_selection.clear()
         for index, item in enumerate(selected, start=1):
             self.results_selection.addItem(f"{index}. {item.get('event_type', 'highlight')}  {float(item.get('start_time', 0.0)):.1f}s - {float(item.get('end_time', 0.0)):.1f}s")
@@ -686,7 +687,9 @@ class MainWindow(QMainWindow):
         if not video or not session_dir:
             return
         profile = load_game_profile(Path(self.game_combo.currentData()))
-        result = ProductionOrchestrator(profile=profile, vision_provider=None).rerender_selection(video, session_dir, self._selected_result_items())
+        result = ProductionOrchestrator(profile=profile, vision_provider=None).rerender_selection(
+            str(video), str(session_dir), self._selected_result_items()
+        )
         self.result_context.update(result)
         final_output_path = result.get("final_output_path") or result.get("final_path") or "none"
         self.results_view.appendPlainText(f"\nRe-render: {result.get('status')}\nMontage: {final_output_path}")
@@ -725,11 +728,10 @@ class MainWindow(QMainWindow):
     def _stop_worker(self) -> None:
         self.start_button.setEnabled(True)
         self.cancel_analysis_button.setEnabled(False)
-        if self.thread:
-            self.thread.quit()
-            self.thread.wait()
-        self.worker = None
-        self.thread = None
+        if self.analysis_thread:
+            self.analysis_thread.quit()
+            self.analysis_thread.wait()
+        self.analysis_thread = None
 
 
 def run_desktop_app() -> int:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import math
+from pathlib import Path
+from typing import Any
 
 from game_ai_editor.media.metadata import probe_media
 
@@ -11,10 +12,10 @@ def run_qc(
     final_path: str | Path,
     *,
     source_path: str | Path | None = None,
-    timeline: list[dict] | None = None,
+    timeline: list[dict[str, Any]] | None = None,
     expected_audio: bool = False,
-) -> dict:
-    checks: list[dict] = []
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
     errors: list[str] = []
     warnings: list[str] = []
     for label, target in [("preview", preview_path), ("final", final_path)]:
@@ -25,9 +26,9 @@ def run_qc(
         if exists:
             try:
                 info = probe_media(file_path).model_dump()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - best-effort probe
                 probe_error = str(exc)
-        result = {
+        result: dict[str, Any] = {
             "label": label,
             "path": str(file_path),
             "exists": exists,
@@ -45,7 +46,7 @@ def run_qc(
         checks.append(result)
         if not exists:
             errors.append(f"{label}: output file is missing")
-        elif result["size_bytes"] <= 0:
+        elif int(result["size_bytes"]) <= 0:
             errors.append(f"{label}: output file is empty")
         elif info is None:
             errors.append(f"{label}: output is not decodable by ffprobe")

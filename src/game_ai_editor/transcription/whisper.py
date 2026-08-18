@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from game_ai_editor.media.metadata import probe_media
 
 try:
     from faster_whisper import WhisperModel  # type: ignore
 except ImportError:  # pragma: no cover
-    WhisperModel = None  # type: ignore
+    WhisperModel = None
 
 
-def transcribe_audio(path: str | Path) -> dict:
+def transcribe_audio(path: str | Path) -> dict[str, Any]:
     input_path = Path(path)
     metadata = probe_media(input_path)
     if not metadata.audio_stream:

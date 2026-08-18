@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import re
 import hashlib
 import json
+import re
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,7 +36,7 @@ def project_id_from_source(source_path: str | Path) -> str:
 
 def canonical_relative_output_dir(project_id: str | Path) -> str:
     normalized = _normalize_project_id(project_id)
-    return PurePosixPath("output") / normalized
+    return str(PurePosixPath("output") / normalized)
 
 
 def canonical_relative_final_output_path(project_id: str | Path) -> str:

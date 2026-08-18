@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from game_ai_editor.media.metadata import probe_media
 
-from .models import VisionRequest, VisionResult
+from .models import VisionRequest
 from .ollama import OllamaVisionProvider
 from .prompts import COARSE_SCAN_PROMPT
 from .sampler import sample_scene_frames
@@ -92,7 +93,7 @@ def run_vision_scan(
     provider.check_available()
 
     if output_dir is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_path = Path("work/vision_scan") / f"{input_path.stem}_{timestamp}"
     else:
         output_path = Path(output_dir)
@@ -132,7 +133,7 @@ def run_vision_scan(
             result = vision_result.model_dump()
             result["start"] = window["start"]
             result["end"] = window["end"]
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - per-window isolation
             result = {
                 "start": window["start"],
                 "end": window["end"],

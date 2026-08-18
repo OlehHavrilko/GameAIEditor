@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,7 @@ def _read_low_res_video(
         "-vf", f"fps={sample_fps:.8f},scale=64:36,format=gray",
         "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1",
     ]
-    expected_frames = max(1, int(round(scan_duration * sample_fps)))
+    expected_frames = max(1, round(scan_duration * sample_fps))
 
     def execute(command: list[str]) -> tuple[list[np.ndarray], float, float, float, str]:
         started = time.perf_counter()
@@ -68,11 +68,11 @@ def _read_low_res_video(
         ]
         return frames, elapsed, startup_elapsed, elapsed - startup_elapsed, ""
 
-    frames, elapsed, startup_elapsed, runtime_elapsed, error_text = execute(sparse_command)
+    frames, elapsed, startup_elapsed, _, error_text = execute(sparse_command)
     used_fallback = len(frames) < expected_frames
     commands = [sparse_command]
     if used_fallback:
-        frames, elapsed, startup_elapsed, runtime_elapsed, error_text = execute(base_command)
+        frames, elapsed, startup_elapsed, _, error_text = execute(base_command)
         commands.append(base_command)
     if not frames:
         raise PrefilterError(f"FFmpeg prefilter extraction failed: {error_text.strip()}")
@@ -255,7 +255,7 @@ def run_prefilter(
         max_windows=max_windows,
     )
     if output_dir is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_path = Path("work/prefilter") / f"{input_path.stem}_{timestamp}"
     else:
         output_path = Path(output_dir)

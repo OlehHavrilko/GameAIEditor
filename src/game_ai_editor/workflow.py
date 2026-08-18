@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def benchmark_motion_video(source_path: str | Path, sample_fps: float = 2.0, motion_threshold: float = 8.0) -> dict:
+def benchmark_motion_video(source_path: str | Path, sample_fps: float = 2.0, motion_threshold: float = 8.0) -> dict[str, Any]:
     result = analyze_motion(source_path, motion_threshold=motion_threshold, sample_fps=sample_fps, benchmark=True)
     return {
         "source_path": str(Path(source_path)),
@@ -50,14 +50,14 @@ def _read_json(path: Path) -> Any:
 def create_session_dir(source_path: str | Path, work_root: str | Path | None = None) -> Path:
     source = Path(source_path)
     root = Path(work_root) if work_root is not None else Path("work")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     session_name = f"{source.stem.replace(' ', '_')}_{timestamp}"
     session_dir = root / session_name
     session_dir.mkdir(parents=True, exist_ok=True)
     return session_dir
 
 
-def analyze_video(source_path: str | Path, profile_path: str | Path | None = None, session_dir: str | Path | None = None) -> dict:
+def analyze_video(source_path: str | Path, profile_path: str | Path | None = None, session_dir: str | Path | None = None) -> dict[str, Any]:
     input_path = Path(source_path)
     if not input_path.exists():
         raise FileNotFoundError(f"Input video not found: {input_path}")
@@ -88,7 +88,7 @@ def analyze_video(source_path: str | Path, profile_path: str | Path | None = Non
     }
 
 
-def detect_candidates(session_dir: str | Path, profile_path: str | Path | None = None) -> list[dict]:
+def detect_candidates(session_dir: str | Path, profile_path: str | Path | None = None) -> list[dict[str, Any]]:
     working_dir = Path(session_dir)
     profile = load_game_profile(profile_path or Path("config/games/arma_reforger.json"))
     events = _read_json(working_dir / "events.json")
@@ -97,7 +97,7 @@ def detect_candidates(session_dir: str | Path, profile_path: str | Path | None =
     return candidates
 
 
-def select_highlights_for_session(session_dir: str | Path, profile_path: str | Path | None = None, max_count: int = 5) -> list[dict]:
+def select_highlights_for_session(session_dir: str | Path, profile_path: str | Path | None = None, max_count: int = 5) -> list[dict[str, Any]]:
     working_dir = Path(session_dir)
     profile = load_game_profile(profile_path or Path("config/games/arma_reforger.json"))
     candidates = _read_json(working_dir / "candidates.json")
@@ -106,7 +106,7 @@ def select_highlights_for_session(session_dir: str | Path, profile_path: str | P
     return selected
 
 
-def edit_session(session_dir: str | Path) -> dict:
+def edit_session(session_dir: str | Path) -> dict[str, Any]:
     working_dir = Path(session_dir)
     metadata = _read_json(working_dir / "metadata.json")
     selection = _read_json(working_dir / "selection.json")
@@ -134,7 +134,7 @@ def render_session(session_dir: str | Path) -> str:
     return str(final_path)
 
 
-def qc_session(session_dir: str | Path) -> dict:
+def qc_session(session_dir: str | Path) -> dict[str, Any]:
     working_dir = Path(session_dir)
     preview_path = working_dir / "preview.mp4"
     final_path = working_dir / "final.mp4"
@@ -143,7 +143,7 @@ def qc_session(session_dir: str | Path) -> dict:
     return qc_result
 
 
-def run_all_pipeline(source_path: str | Path, profile_path: str | Path | None = None) -> dict:
+def run_all_pipeline(source_path: str | Path, profile_path: str | Path | None = None) -> dict[str, Any]:
     from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
 
     orchestrator = ProductionOrchestrator.from_profile_path(

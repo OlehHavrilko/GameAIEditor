@@ -26,9 +26,7 @@ input/*
 work/*
 !work/.gitkeep
 output/*
-!output/.gitkeep
 finalvids/*
-!finalvids/.gitkeep
 cache/*
 generated media/
 previews/*

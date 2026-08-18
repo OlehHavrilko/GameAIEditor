@@ -5,24 +5,30 @@ import json
 import re
 import subprocess
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from game_ai_editor.events.arcs import build_event_arcs
+from game_ai_editor.events.vision_adapter import vision_result_to_events
 from game_ai_editor.media.metadata import probe_media
+from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
+from game_ai_editor.orchestration.session import AnalysisQueue, AnalysisSession
+from game_ai_editor.orchestration.state import STAGES as ORCHESTRATOR_STAGES
+from game_ai_editor.orchestration.state import (
+    stage_status as orchestration_stage_status,
+)
+from game_ai_editor.orchestration.state import write_json
 from game_ai_editor.vision.models import VisionRequest
-from game_ai_editor.vision.ollama import OllamaVisionProvider
+from game_ai_editor.vision.ollama import (
+    OllamaModelError,
+    OllamaUnavailableError,
+    OllamaVisionError,
+    OllamaVisionProvider,
+)
 from game_ai_editor.vision.prefilter import run_prefilter
 from game_ai_editor.vision.prompts import COARSE_SCAN_PROMPT
 from game_ai_editor.vision.sampler import sample_scene_frames
-from game_ai_editor.events.arcs import build_event_arcs
-from game_ai_editor.events.vision_adapter import vision_result_to_events
-from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
-from game_ai_editor.orchestration.session import AnalysisQueue
-from game_ai_editor.orchestration.state import STAGES as ORCHESTRATOR_STAGES
-from game_ai_editor.orchestration.state import stage_status as orchestration_stage_status
-from game_ai_editor.orchestration.state import write_json
-
 
 SUPPORTED_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm"}
 IGNORED_PREFIXES = (".", "~$", "~")
@@ -84,7 +90,7 @@ def _safe_video_id(path: Path) -> str:
 
 
 def _batch_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _manifest_paths(work_root: Path, input_directory: Path) -> list[Path]:
@@ -134,11 +140,11 @@ def build_batch_manifest(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         batch_id = str(manifest["batch_id"])
         batch_dir = manifest_path.parent
-        created_at = manifest.get("created_at", datetime.now(timezone.utc).isoformat())
+        created_at = manifest.get("created_at", datetime.now(UTC).isoformat())
     else:
         batch_id = _batch_id()
         batch_dir = work_path / batch_id
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
 
     video_entries: list[dict[str, Any]] = []
     total_duration = 0.0
@@ -167,7 +173,7 @@ def build_batch_manifest(
     manifest = {
         "batch_id": batch_id,
         "created_at": created_at,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
         "input_directory": str(root.resolve()),
         "dry_run": dry_run,
         "status": "planned" if dry_run else "not_started",
@@ -245,11 +251,11 @@ def _run_orchestrated_batch(
     selected_outputs: list[str] = []
     for index, video in enumerate(selected_videos, start=1):
         session_dir = Path(video["session_dir"])
-        session = queue.get(video["session_id"])
+        queued_session: AnalysisSession | None = queue.get(video["session_id"])
         try:
-            if session is None:
+            if queued_session is None:
                 raise BatchError(f"Queue session missing: {video['session_id']}")
-            queue.mark_running(session.session_id)
+            queue.mark_running(queued_session.session_id)
             orchestrator = ProductionOrchestrator.from_profile_path(profile_path, resume=resume)
             result = orchestrator.run(video["path"], session_dir=session_dir, max_clips=clips)
             status = result.get("status", "FAILED")
@@ -270,7 +276,7 @@ def _run_orchestrated_batch(
                 "selected_clips": len(result.get("selected", [])),
                 "final_path": final_path,
             })
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError, FileNotFoundError) as exc:
             video["status"] = "FAILED"
             video["error_type"] = type(exc).__name__
             video["error_message"] = str(exc)
@@ -284,7 +290,7 @@ def _run_orchestrated_batch(
                 "error_message": str(exc),
             })
         manifest["videos"] = [entry for entry in manifest["videos"]]
-        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        manifest["updated_at"] = datetime.now(UTC).isoformat()
         queue.save()
         write_json(manifest["manifest_path"], manifest)
         print(f"[{index}/{len(selected_videos)}] {video['filename']} status={video['status']}")
@@ -325,7 +331,7 @@ def _run_candidate_vision(
     availability_error: str | None = None
     try:
         provider.check_available()
-    except Exception as exc:
+    except (OllamaUnavailableError, OllamaModelError, OllamaVisionError, OSError, RuntimeError) as exc:
         availability_error = str(exc)
     for index, candidate in enumerate(candidates, start=1):
         result_path = vision_dir / f"window_{index:04d}.json"
@@ -369,7 +375,7 @@ def _run_candidate_vision(
             payload["prefilter_score"] = candidate["score"]
             _write_json(result_path, payload)
             results.append(payload)
-        except Exception as exc:
+        except (OllamaUnavailableError, OllamaModelError, OllamaVisionError, OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
             payload = {
                 "scene_id": f"{video['video_id']}_window_{index:04d}",
                 "start_time": candidate["start"],
@@ -567,7 +573,7 @@ def _run_production_batch(
     }
     _write_json(output_dir / "qc.json", qc)
     manifest["status"] = "completed" if qc["passed"] else "failed"
-    manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+    manifest["updated_at"] = datetime.now(UTC).isoformat()
     manifest["production_summary"] = {
         "videos_processed": len(selected_videos),
         "candidates": sum(item["prefilter_candidates"] for item in video_summaries),

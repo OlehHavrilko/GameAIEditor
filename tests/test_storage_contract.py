@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from game_ai_editor.orchestration.state import source_identity, source_matches
 from game_ai_editor.storage import (
     backend_render_artifacts,
     canonical_relative_final_output_path,
@@ -9,7 +10,6 @@ from game_ai_editor.storage import (
     ensure_project_output_dir,
     project_id_from_source,
 )
-from game_ai_editor.orchestration.state import source_identity, source_matches
 
 
 def test_canonical_output_paths_are_repo_relative() -> None:

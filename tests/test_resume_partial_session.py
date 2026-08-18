@@ -10,7 +10,6 @@ import pytest
 from game_ai_editor.config.loader import load_game_profile
 from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
 
-
 PROFILE_PATH = Path(__file__).resolve().parents[1] / "config/games/arma_reforger.json"
 
 

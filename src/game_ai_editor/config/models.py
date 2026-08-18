@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -34,8 +36,8 @@ class GameProfile(BaseModel):
     description: str = ""
     interesting_events: list[str] = Field(default_factory=list)
     ignored_events: list[str] = Field(default_factory=list)
-    scene_model: dict = Field(default_factory=dict)
+    scene_model: dict[str, Any] = Field(default_factory=dict)
     scoring_weights: ScoringWeights
-    editing_rules: list[dict] = Field(default_factory=list)
-    narrative_signals: dict = Field(default_factory=dict)
+    editing_rules: list[dict[str, Any]] = Field(default_factory=list)
+    narrative_signals: dict[str, Any] = Field(default_factory=dict)
     vision: VisionConfig = Field(default_factory=VisionConfig)

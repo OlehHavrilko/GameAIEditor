@@ -83,7 +83,7 @@ class VisionResult(BaseModel):
         inference_time_seconds: float,
         total_time_seconds: float,
         response_size_bytes: int,
-    ) -> "VisionResult":
+    ) -> VisionResult:
         analysis = VisionAnalysisPayload.model_validate(payload)
         return cls(
             provider=provider,
