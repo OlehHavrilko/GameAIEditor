@@ -8,103 +8,170 @@ Requires-Dist: pydantic>=2.7.4
 Requires-Dist: numpy>=1.26.4
 Requires-Dist: opencv-python>=4.10.0
 Requires-Dist: faster-whisper>=1.0.1
-Requires-Dist: pytesseract>=0.3.13
-Requires-Dist: easyocr>=1.7.2
-Requires-Dist: transformers>=4.45.2
 Requires-Dist: torch>=2.6.0
-Requires-Dist: ffmpeg-python>=0.2.0
-Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: PySide6>=6.7.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3.0; extra == "dev"
 Requires-Dist: ruff>=0.5.0; extra == "dev"
+Requires-Dist: mypy>=1.10.0; extra == "dev"
 
-# Game AI Editor
+# GameAIEditor
 
-Local-first AI editor for building cinematic highlight reels from long gameplay footage, with Arma Reforger as the first supported title.
+> Рабочий production MVP для локального анализа игровых записей и сборки highlight-монтажей. Это ещё не коммерческий видеоредактор: текущий фокус — надёжный pipeline, resumable sessions, local AI и FFmpeg.
 
-Status: architecture-first scaffold only. Full automation pipeline will be implemented in subsequent phases.
+Локальный AI-инструмент для поиска и монтажа лучших моментов из игровых видео. Первый game profile — **Arma Reforger**, а pipeline не содержит game-specific orchestration.
 
-## Goal
+Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества. Первый game profile — **Arma Reforger**.
 
-Given a long gameplay recording, the system should:
-
-- analyze video and audio;
-- recognize spoken commentary;
-- detect firefights, kills, explosions, vehicle destruction, and unusual battlefield events;
-- group related moments into narrative scenes;
-- score highlights by cinematic value;
-- select the best moments;
-- add context before and after events;
-- assemble a final sequence;
-- render a final MP4 using FFmpeg as the primary editing engine.
-
-## Core stack
-
-- Python 3.11+
-- FFmpeg + FFprobe
-- faster-whisper
-- OpenCV
-- OCR / visual recognition layer
-- Pydantic
-- JSON-driven configuration
-- CLI-first workflow
-
-## Project structure
+## Как это работает
 
 ```text
-GameAIEditor/
-├── .github/
-├── .gitignore
-├── README.md
-├── ARCHITECTURE.md
-├── DEVELOPMENT.md
-├── requirements.txt
-├── pyproject.toml
-├── config/
-│   └── games/
-│       └── arma_reforger.json
-├── skills/
-│   └── game-highlight-editor/
-│       └── SKILL.md
-├── src/
-│   └── game_ai_editor/
-│       ├── cli.py
-│       ├── config/
-│       ├── media/
-│       ├── analysis/
-│       ├── transcription/
-│       ├── vision/
-│       ├── events/
-│       ├── scoring/
-│       ├── selection/
-│       ├── timeline/
-│       ├── editing/
-│       ├── audio/
-│       ├── subtitles/
-│       └── qc/
-├── input/
-├── output/
-├── work/
-└── tests/
+video -> metadata -> prefilter -> signals + Vision -> fusion -> Event Arc -> scoring -> selection -> timeline -> MP4 -> QC
 ```
 
-## Design principles
+Проект использует:
 
-1. Architecture before full automation.
-2. Local-first processing and deterministic configuration.
-3. Event detection must be contextual, not purely frame-based.
-4. Narrative scenes matter more than isolated kills.
-5. FFmpeg is the primary render and assembly engine.
-6. Quality checks must happen before final export.
+- Python 3.11+
+- FFmpeg и FFprobe
+- OpenCV
+- faster-whisper для распознавания речи
+- Pydantic и JSON-профили игр
+- Ollama Vision для дополнительного анализа сцен
+- PySide6 desktop application
 
-## Roadmap
+## Установка
 
-- Phase 1: architecture and game profile definition
-- Phase 2: media ingestion and metadata extraction
-- Phase 3: audio transcription and speech analysis
-- Phase 4: event detection and contextual scene grouping
-- Phase 5: scoring, preselection, and timeline planning
-- Phase 6: FFmpeg-based editing and export
-- Phase 7: subtitle generation and final QC
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-This project intentionally starts with the design layer so the later automation logic has a strong contract and a clear, modular foundation.
+FFmpeg и FFprobe должны быть доступны в `PATH`.
+
+## Основные команды
+
+Desktop application:
+
+```powershell
+game-ai-editor desktop
+```
+
+Единый production pipeline:
+
+Можно запускать этапы отдельно:
+
+```powershell
+game-ai-editor analyze input\video.mp4
+game-ai-editor detect work\video_session
+game-ai-editor select work\video_session
+game-ai-editor edit work\video_session
+game-ai-editor render work\video_session
+game-ai-editor qc work\video_session
+```
+
+Запуск полного пайплайна:
+
+```powershell
+game-ai-editor all input\video.mp4
+```
+
+`all` и `batch` используют `ProductionOrchestrator`. При включённом Vision он анализирует только окна, прошедшие prefilter. Пустой результат получает статус `NO_HIGHLIGHTS`, fake video не создаётся.
+
+Другие полезные команды:
+
+```powershell
+game-ai-editor prefilter input\video.mp4
+game-ai-editor batch input
+game-ai-editor vision-scan input\video.mp4 --prefilter
+```
+
+Batch продолжает обработку после ошибки одного видео и сохраняет production session artifacts в `work/sessions/<session_id>/`; результаты публикуются только в canonical `output/<project_id>/`.
+
+## AI providers
+
+Provider выбирается через game profile или desktop settings:
+
+- `ollama` — local-first endpoint, по умолчанию `http://localhost:11434`;
+- `lm_studio` — OpenAI-compatible local endpoint;
+- `openrouter` — OpenAI-compatible remote endpoint;
+- `custom` — OpenAI-compatible endpoint.
+
+Ollama и LM Studio не отправляют кадры в интернет. Для OpenRouter API key передаётся через environment variable и не хранится в Git.
+
+В профиле Vision используются `enabled`, `provider`, `base_url`, `model`, `timeout`.
+
+## Структура проекта и storage contract
+
+- `input/` - исходные пользовательские видео, которые не должны копироваться в Git и не должны попадать в `work/` без явной необходимости;
+- `work/` - промежуточные artifacts и session-local data, включая `work/sessions/<session_id>/...`;
+- `output/` - пользовательские готовые видео, только здесь должен жить production output;
+- `finalvids/` - legacy/deprecated compatibility directory, не использовать для новых production paths;
+- `tests/` - автоматические тесты.
+
+Canonical production output:
+
+```text
+output/<project_id>/final.mp4
+output/<project_id>/preview.mp4
+```
+
+`status.json` и backend result payload обязаны содержать абсолютный или repo-relative путь к финальному output. UI получает путь из backend artifact contract и не вычисляет его самостоятельно.
+
+Каждый запуск сохраняет JSON-файлы с метаданными, движением, транскрипцией, событиями, кандидатами, выбором моментов, таймлайном и результатами QC.
+
+## Текущее состояние
+
+Проект находится в стадии **Production MVP hardening**. Legacy stage commands сохранены для совместимости, но production-команды используют единый `ProductionOrchestrator`.
+
+Уже реализовано:
+
+- получение метаданных и анализ аудио;
+- анализ движения и поиск событий-кандидатов;
+- распознавание речи;
+- оценка и выбор лучших моментов;
+- построение таймлайна и preview/render через FFmpeg;
+- пакетная обработка видео и продолжение незавершённых запусков;
+- отдельные тесты и сканирование через Ollama Vision;
+- автоматические тесты основного пайплайна и vision-модулей.
+- synthetic orchestrator E2E с mock Vision и реальным FFmpeg/QC.
+
+Дополнительно реализованы:
+
+- first-run diagnostics и optional local AI setup;
+- cancellable model download и analysis workers;
+- persistent queue с pause/resume/cancel/retry и stale-session recovery;
+- Results workflow из реальных artifacts с изменением selection и повторным render;
+- structured error UX и degraded Vision mode;
+- PyInstaller one-directory packaging для Windows.
+
+Ограничения текущей версии: коммерческий installer/updater, сложные эффекты, полноценная non-linear редактура, дополнительные game profiles и optional downloadable ML components требуют следующих этапов.
+
+## Проверка
+
+```powershell
+.venv\Scripts\pytest -q
+.venv\Scripts\python.exe -c "from game_ai_editor.desktop.app import MainWindow; print('ui-import-ok')"
+.venv\Scripts\python.exe -m game_ai_editor system-status
+.venv\Scripts\python.exe -m game_ai_editor runtime-status
+```
+
+Реальный Ollama smoke test является manual-only и не запускается обычным `pytest`.
+
+## Packaging
+
+```powershell
+.venv\Scripts\python.exe -m pip install pyinstaller
+.venv\Scripts\python.exe -m PyInstaller packaging\game_ai_editor.spec
+```
+
+Подробности: [docs/PACKAGING.md](docs/PACKAGING.md). Для разработки PyInstaller не обязателен.
+
+## Документация
+
+- [Architecture](ARCHITECTURE.md)
+- [Development guide](DEVELOPMENT.md)
+- [Production pipeline](docs/PIPELINE.md)
+- [AI providers](docs/AI_PROVIDERS.md)
+- [Packaging](docs/PACKAGING.md)
+- [Contributing](CONTRIBUTING.md)

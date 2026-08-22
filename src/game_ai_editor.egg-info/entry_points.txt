@@ -1,2 +1,6 @@
 [console_scripts]
 game-ai-editor = game_ai_editor.cli:main
+game-ai-editor-gui = game_ai_editor.desktop.app:run_desktop_app
+
+[gui_scripts]
+game-ai-editor = game_ai_editor.desktop.app:run_desktop_app

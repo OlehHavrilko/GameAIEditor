@@ -1,0 +1,182 @@
+{
+  "video": "/tmp/tmprigfxdya/test.mp4",
+  "duration": 5.0,
+  "window_size": 2.0,
+  "threshold": 0.3,
+  "total_windows": 3,
+  "processing_time_seconds": 0.2509,
+  "extraction_time_seconds": 0.0886,
+  "ffmpeg_diagnostics": {
+    "video": {
+      "command": [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        "0",
+        "-i",
+        "/tmp/tmprigfxdya/test.mp4",
+        "-t",
+        "5.0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "fps=1.00000000,scale=64:36,format=gray",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "gray",
+        "pipe:1"
+      ],
+      "attempted_commands": [
+        [
+          "ffmpeg",
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-skip_frame",
+          "nokey",
+          "-ss",
+          "0",
+          "-i",
+          "/tmp/tmprigfxdya/test.mp4",
+          "-t",
+          "5.0",
+          "-an",
+          "-sn",
+          "-dn",
+          "-vf",
+          "fps=1.00000000,scale=64:36,format=gray",
+          "-f",
+          "rawvideo",
+          "-pix_fmt",
+          "gray",
+          "pipe:1"
+        ],
+        [
+          "ffmpeg",
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-ss",
+          "0",
+          "-i",
+          "/tmp/tmprigfxdya/test.mp4",
+          "-t",
+          "5.0",
+          "-an",
+          "-sn",
+          "-dn",
+          "-vf",
+          "fps=1.00000000,scale=64:36,format=gray",
+          "-f",
+          "rawvideo",
+          "-pix_fmt",
+          "gray",
+          "pipe:1"
+        ]
+      ],
+      "startup_time_ms": 0.39,
+      "runtime_time_ms": 88.192,
+      "frame_count": 5,
+      "ffmpeg_calls": 2,
+      "sparse_keyframe_mode": false,
+      "fallback_used": true
+    },
+    "audio": {
+      "command": [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        "0",
+        "-i",
+        "/tmp/tmprigfxdya/test.mp4",
+        "-t",
+        "5.0",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-ac",
+        "1",
+        "-ar",
+        "8000",
+        "-f",
+        "s16le",
+        "-acodec",
+        "pcm_s16le",
+        "pipe:1"
+      ],
+      "startup_time_ms": 0.341,
+      "runtime_time_ms": 78.467,
+      "ffmpeg_calls": 1,
+      "available": true
+    },
+    "video_calls_total": 2,
+    "audio_calls_total": 1,
+    "video_decoded_frames_total": 5,
+    "video_seek_decode_shared": true
+  },
+  "window_diagnostics": [
+    {
+      "window_index": 1,
+      "start": 0.0,
+      "end": 2.0,
+      "ffmpeg_calls_for_window": 0,
+      "decoded_frames_for_window": 2,
+      "video_seek_decode_shared": true,
+      "visual_activity_time_ms": 0.067,
+      "scene_change_time_ms": 0.001,
+      "audio_lookup_time_ms": 0.001,
+      "compute_time_ms": 0.009
+    },
+    {
+      "window_index": 2,
+      "start": 2.0,
+      "end": 4.0,
+      "ffmpeg_calls_for_window": 0,
+      "decoded_frames_for_window": 2,
+      "video_seek_decode_shared": true,
+      "visual_activity_time_ms": 0.017,
+      "scene_change_time_ms": 0.0,
+      "audio_lookup_time_ms": 0.0,
+      "compute_time_ms": 0.006
+    },
+    {
+      "window_index": 3,
+      "start": 4.0,
+      "end": 5.0,
+      "ffmpeg_calls_for_window": 0,
+      "decoded_frames_for_window": 0,
+      "video_seek_decode_shared": true,
+      "visual_activity_time_ms": 0.001,
+      "scene_change_time_ms": 0.0,
+      "audio_lookup_time_ms": 0.0,
+      "compute_time_ms": 0.004
+    }
+  ],
+  "windows": [
+    {
+      "start": 0.0,
+      "end": 2.0,
+      "score": 0.0,
+      "reasons": []
+    },
+    {
+      "start": 2.0,
+      "end": 4.0,
+      "score": 0.0,
+      "reasons": []
+    },
+    {
+      "start": 4.0,
+      "end": 5.0,
+      "score": 0.0,
+      "reasons": []
+    }
+  ],
+  "candidates": []
+}

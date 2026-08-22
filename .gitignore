@@ -1,65 +1,62 @@
+```
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
-*.pyc
-.venv/
+.Python
+env/
 venv/
-
-# Tooling
+.venv/
+.ENV
+.ENV.*
+.venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
 .pytest_cache/
 .mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+.hypothesis/
 
-# Build and packaging outputs
+# Distribution / packaging
+.Python
 build/
+develop-eggs/
 dist/
-*.spec.bak
-pyinstaller.log
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Local runtime artifacts
-input/*
-!input/.gitkeep
-work/*
-!work/.gitkeep
-output/*
-finalvids/*
-cache/*
-generated media/
-previews/*
-*.jpg
-*.jpeg
-
-# Canonical production media contract
-input/
-work/
-output/
-finalvids/
-cache/
-generated media/
-
-# Model and media caches
-models/
-*.pt
-*.bin
-*.safetensors
-*.wav
-*.mp4
-*.mkv
-*.avi
-*.mov
-*.webm
-*.log
-
-# OS/editor files
-.DS_Store
-Thumbs.db
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
-# Local environment
+# Environment
 .env
-.env.*
+.env.local
+*.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+```
