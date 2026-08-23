@@ -2,6 +2,8 @@
 
 > Рабочий production MVP для локального анализа игровых записей и сборки highlight-монтажей. Это ещё не коммерческий видеоредактор: текущий фокус — надёжный pipeline, resumable sessions, local AI и FFmpeg.
 
+**[⬇ Скачать Windows-инсталлятор (последняя версия)](https://github.com/OlehHavrilko/GameAIEditor/releases/latest)** — не требует прав администратора; FFmpeg и Ollama ставятся отдельно (см. предупреждение при установке).
+
 Локальный AI-инструмент для поиска и монтажа лучших моментов из игровых видео. Первый game profile — **Arma Reforger**, а pipeline не содержит game-specific orchestration.
 
 Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества. Первый game profile — **Arma Reforger**.
