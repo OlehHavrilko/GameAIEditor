@@ -7,7 +7,13 @@ project_root = Path(SPECPATH).parent
 analysis = Analysis(
     [str(project_root / "packaging" / "entrypoint.py")],
     pathex=[str(project_root / "src")],
-    datas=[(str(project_root / "config"), "config")],
+    datas=[
+        (str(project_root / "config"), "config"),
+        (
+            str(project_root / ".venv" / "Lib" / "site-packages" / "faster_whisper" / "assets"),
+            "faster_whisper/assets",
+        ),
+    ],
     hiddenimports=[
         "PySide6.QtCore",
         "PySide6.QtGui",
@@ -21,12 +27,10 @@ analysis = Analysis(
     excludes=[
         "pytest",
         "_pytest",
-        "torch.testing._internal",
-        "torch.distributed",
-        "torch._inductor",
-        "torchvision.datasets",
-        "torchvision.models",
-        "torchvision.transforms",
+        "torch",
+        "torchvision",
+        "torchgen",
+        "functorch",
         "IPython",
         "jupyter",
         "notebook",
@@ -38,7 +42,7 @@ analysis = Analysis(
     noarchive=False,
 )
 pyz = PYZ(analysis.pure)
-exe = EXE(pyz, analysis.scripts, name="game_ai_editor", console=True)
+exe = EXE(pyz, analysis.scripts, name="game_ai_editor", console=False)
 coll = COLLECT(
     exe,
     analysis.binaries,
