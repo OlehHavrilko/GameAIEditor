@@ -1,17 +1,17 @@
 # GameAIEditor
 
-> Рабочий production MVP для локального анализа игровых записей и сборки highlight-монтажей. Это ещё не коммерческий видеоредактор: текущий фокус — надёжный pipeline, resumable sessions, local AI и FFmpeg.
+> Рабочий production MVP для локального анализа игровых записей и сборки highlight-монтажей. Это ещё не коммерческий видеоредактор: текущий фокус — надёжный pipeline, resumable sessions и FFmpeg.
 
-**[⬇ Скачать Windows-инсталлятор (последняя версия)](https://github.com/OlehHavrilko/GameAIEditor/releases/latest)** — не требует прав администратора; FFmpeg и Ollama ставятся отдельно (см. предупреждение при установке).
+**[⬇ Скачать Windows-инсталлятор (последняя версия)](https://github.com/OlehHavrilko/GameAIEditor/releases/latest)** — не требует прав администратора; ставится только FFmpeg (см. предупреждение при установке).
 
-Локальный AI-инструмент для поиска и монтажа лучших моментов из игровых видео. Первый game profile — **Arma Reforger**, а pipeline не содержит game-specific orchestration.
+Инструмент для поиска и монтажа лучших моментов из игровых видео, полностью локальный и работающий из коробки без AI-провайдера: motion/audio/speech-сигналы и классификация событий по ключевым словам транскрипта уже дают полноценный результат. Ollama Vision — опциональный, выключенный по умолчанию слой для более тонкого разбора сцен; включать его не обязательно. Первый game profile — **Arma Reforger**, а pipeline не содержит game-specific orchestration.
 
 Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества. Первый game profile — **Arma Reforger**.
 
 ## Как это работает
 
 ```text
-video -> metadata -> prefilter -> signals + Vision -> fusion -> Event Arc -> scoring -> selection -> timeline -> MP4 -> QC
+video -> metadata -> [prefilter + Vision, опционально] -> signals (motion/audio/speech, параллельно) -> fusion -> Event Arc -> scoring -> selection -> timeline -> MP4 -> QC
 ```
 
 Проект использует:
@@ -21,7 +21,7 @@ video -> metadata -> prefilter -> signals + Vision -> fusion -> Event Arc -> sco
 - OpenCV
 - faster-whisper для распознавания речи
 - Pydantic и JSON-профили игр
-- Ollama Vision для дополнительного анализа сцен
+- Ollama Vision (опционально, выключено по умолчанию) для дополнительного анализа сцен
 - PySide6 desktop application
 
 ## Установка
@@ -73,9 +73,11 @@ game-ai-editor vision-scan input\video.mp4 --prefilter
 
 Batch продолжает обработку после ошибки одного видео и сохраняет production session artifacts в `work/sessions/<session_id>/`; результаты публикуются только в canonical `output/<project_id>/`.
 
-## AI providers
+## AI providers (опционально)
 
-Provider выбирается через game profile или desktop settings:
+Vision по умолчанию выключен (`vision.enabled: false` в game profile) — pipeline не запускает ни один AI provider, а prefilter-стадия при этом полностью пропускается, так что запуск без Vision не платит и за неё. Включать Vision имеет смысл только когда нужна более точная классификация сцен сверх того, что уже даёт motion/audio/keyword-анализ.
+
+Если решишь включить, provider выбирается через game profile или desktop settings:
 
 - `ollama` — local-first endpoint, по умолчанию `http://localhost:11434`;
 - `lm_studio` — OpenAI-compatible local endpoint;
