@@ -322,6 +322,7 @@ class ProductionOrchestrator:
         max_clips: int = 5,
         target_duration: float | None = None,
         aspect_ratio: str | None = None,
+        burn_subtitles: bool = False,
     ) -> dict[str, Any]:
         source = Path(video).resolve()
         if not source.exists():
@@ -337,7 +338,11 @@ class ProductionOrchestrator:
         final_output_path = public_output_dir / "final.mp4"
         identity = source_identity(source)
         fingerprint = configuration_fingerprint(
-            self.profile, max_clips=max_clips, target_duration=target_duration, aspect_ratio=aspect_ratio
+            self.profile,
+            max_clips=max_clips,
+            target_duration=target_duration,
+            aspect_ratio=aspect_ratio,
+            burn_subtitles=burn_subtitles,
         )
         existing_status = session / "status.json"
         if self.resume and existing_status.exists():
@@ -359,6 +364,7 @@ class ProductionOrchestrator:
             preview_output_path=str(preview_output_path),
             output_directory=str(public_output_dir),
             aspect_ratio=aspect_ratio,
+            burn_subtitles=burn_subtitles,
             stages=existing_payload.get("stages") or {stage: {"status": status} for stage, status in initial_stage_statuses().items()},
             vision={
                 "enabled": self.vision_provider is not None,
@@ -561,7 +567,13 @@ class ProductionOrchestrator:
             temporary_preview.unlink(missing_ok=True)
             temporary_final.unlink(missing_ok=True)
             try:
-                build_preview(source, timeline, temporary_preview, aspect_ratio=aspect_ratio)
+                build_preview(
+                    source,
+                    timeline,
+                    temporary_preview,
+                    aspect_ratio=aspect_ratio,
+                    transcript_segments=transcript.get("segments") if burn_subtitles else None,
+                )
                 render_final(temporary_preview, temporary_final)
             except Exception:
                 temporary_preview.unlink(missing_ok=True)
@@ -638,13 +650,21 @@ class ProductionOrchestrator:
         selected: list[dict[str, Any]],
         *,
         aspect_ratio: str | None = None,
+        burn_subtitles: bool | None = None,
     ) -> dict[str, Any]:
         source = Path(video).resolve()
         session = Path(session_dir)
+        status_path = session / "status.json"
+        status_payload = _read_json(status_path) if status_path.exists() else {}
         if aspect_ratio is None:
-            status_path = session / "status.json"
-            if status_path.exists():
-                aspect_ratio = _read_json(status_path).get("aspect_ratio")
+            aspect_ratio = status_payload.get("aspect_ratio")
+        if burn_subtitles is None:
+            burn_subtitles = bool(status_payload.get("burn_subtitles", False))
+        transcript_segments = None
+        if burn_subtitles:
+            transcript_path = session / "signals" / "transcript.json"
+            if transcript_path.exists():
+                transcript_segments = _read_json(transcript_path).get("segments")
         project_id = project_id_from_source(source)
         public_output_dir = ensure_project_output_dir(project_id)
         public_preview_path = public_output_dir / "preview.mp4"
@@ -683,7 +703,9 @@ class ProductionOrchestrator:
         temporary_preview.unlink(missing_ok=True)
         temporary_final.unlink(missing_ok=True)
         try:
-            preview = build_preview(source, timeline, temporary_preview, aspect_ratio=aspect_ratio)
+            preview = build_preview(
+                source, timeline, temporary_preview, aspect_ratio=aspect_ratio, transcript_segments=transcript_segments
+            )
             final = render_final(preview, temporary_final)
             qc = run_qc(
                 temporary_preview,

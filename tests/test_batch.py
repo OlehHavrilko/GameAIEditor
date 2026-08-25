@@ -93,7 +93,7 @@ def test_batch_uses_canonical_sessions_and_outputs_for_mixed_results(monkeypatch
         def from_profile_path(cls, profile_path, resume=True):
             return cls()
 
-        def run(self, source, *, session_dir, max_clips, aspect_ratio=None):
+        def run(self, source, *, session_dir, max_clips, aspect_ratio=None, burn_subtitles=False):
             project_id = project_id_from_source(source)
             output_dir = ensure_project_output_dir(project_id)
             source_name = Path(source).stem

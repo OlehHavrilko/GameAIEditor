@@ -4,12 +4,19 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from game_ai_editor.subtitles import clip_relative_segments, write_srt
+
 # (width, height) output resolution for each supported platform aspect ratio.
 ASPECT_RATIO_PRESETS: dict[str, tuple[int, int]] = {
     "16:9": (1920, 1080),
     "9:16": (1080, 1920),
     "1:1": (1080, 1080),
 }
+
+_SUBTITLE_STYLE = (
+    "FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
+    "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=48"
+)
 
 
 def _aspect_ratio_filter(aspect_ratio: str | None) -> str | None:
@@ -22,6 +29,14 @@ def _aspect_ratio_filter(aspect_ratio: str | None) -> str | None:
     # Scale to fully cover the target frame, then center-crop the overflow -
     # this fills 9:16/1:1 outputs without letterboxing or distorting the source.
     return f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+
+
+def _subtitles_filter(srt_path: Path) -> str:
+    # FFmpeg's subtitles filter parses its argument with its own escaping rules
+    # where ':' and '\' are special, so a Windows drive-letter path needs the
+    # colon escaped and backslashes normalized to forward slashes.
+    escaped_path = srt_path.as_posix().replace(":", "\\:")
+    return f"subtitles='{escaped_path}':force_style='{_SUBTITLE_STYLE}'"
 
 
 def run_ffmpeg(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -37,6 +52,7 @@ def build_preview(
     output_path: str | Path,
     *,
     aspect_ratio: str | None = None,
+    transcript_segments: list[dict[str, Any]] | None = None,
 ) -> Path:
     source = Path(source_path)
     output = Path(output_path)
@@ -47,13 +63,21 @@ def build_preview(
     if not timeline:
         raise ValueError("Cannot render a timeline without selected segments.")
 
-    video_filter = _aspect_ratio_filter(aspect_ratio)
+    aspect_filter = _aspect_ratio_filter(aspect_ratio)
 
     clip_paths: list[Path] = []
     for index, segment in enumerate(timeline):
         start = max(0.0, float(segment.get("start_time", 0.0)))
         end = max(start + 0.5, float(segment.get("end_time", start + 0.5)))
         clip_path = clips_dir / f"clip_{index:02d}.mp4"
+
+        filters = [aspect_filter] if aspect_filter is not None else []
+        if transcript_segments:
+            relative_segments = clip_relative_segments(transcript_segments, start, end)
+            if relative_segments:
+                srt_path = write_srt(relative_segments, clips_dir / f"clip_{index:02d}.srt")
+                filters.append(_subtitles_filter(srt_path))
+
         command = [
             "ffmpeg",
             "-y",
@@ -64,8 +88,8 @@ def build_preview(
             "-i",
             str(source),
         ]
-        if video_filter is not None:
-            command += ["-vf", video_filter]
+        if filters:
+            command += ["-vf", ",".join(filters)]
         command += [
             "-c:v",
             "libx264",

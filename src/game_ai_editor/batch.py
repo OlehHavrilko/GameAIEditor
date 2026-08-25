@@ -200,6 +200,7 @@ def run_batch(
     final_dir: str | Path = "output",
     profile_path: str | Path = "config/games/arma_reforger.json",
     aspect_ratio: str | None = None,
+    burn_subtitles: bool = False,
 ) -> dict[str, Any]:
     manifest = build_batch_manifest(input_directory, work_root=work_root, dry_run=dry_run)
     if dry_run:
@@ -219,6 +220,7 @@ def run_batch(
         final_dir=final_dir,
         profile_path=profile_path,
         aspect_ratio=aspect_ratio,
+        burn_subtitles=burn_subtitles,
     )
 
 
@@ -234,6 +236,7 @@ def _run_orchestrated_batch(
     final_dir: str | Path,
     profile_path: str | Path,
     aspect_ratio: str | None = None,
+    burn_subtitles: bool = False,
 ) -> dict[str, Any]:
     """Run every video through the shared production orchestrator."""
     del window_size, prefilter_threshold, style
@@ -260,7 +263,9 @@ def _run_orchestrated_batch(
                 raise BatchError(f"Queue session missing: {video['session_id']}")
             queue.mark_running(queued_session.session_id)
             orchestrator = ProductionOrchestrator.from_profile_path(profile_path, resume=resume)
-            result = orchestrator.run(video["path"], session_dir=session_dir, max_clips=clips, aspect_ratio=aspect_ratio)
+            result = orchestrator.run(
+                video["path"], session_dir=session_dir, max_clips=clips, aspect_ratio=aspect_ratio, burn_subtitles=burn_subtitles
+            )
             status = result.get("status", "FAILED")
             final_path = result.get("final_output_path") or result.get("final_path")
             if status == "SUCCESS" and final_path and Path(final_path).exists():

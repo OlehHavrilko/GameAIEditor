@@ -98,6 +98,13 @@ def test_configuration_fingerprint_changes_with_aspect_ratio() -> None:
     assert first != second
 
 
+def test_configuration_fingerprint_changes_with_burn_subtitles() -> None:
+    profile = load_game_profile(PROFILE_PATH)
+    first = configuration_fingerprint(profile, max_clips=3, target_duration=None, burn_subtitles=False)
+    second = configuration_fingerprint(profile, max_clips=3, target_duration=None, burn_subtitles=True)
+    assert first != second
+
+
 def test_orchestrator_rejects_unsupported_aspect_ratio(tmp_path: Path) -> None:
     video = tmp_path / "synthetic.mp4"
     _make_video(video)
@@ -218,6 +225,49 @@ def test_orchestrator_synthetic_e2e_with_aspect_ratio(tmp_path: Path, monkeypatc
     assert (int(stream["width"]), int(stream["height"])) == ASPECT_RATIO_PRESETS["9:16"]
     status_payload = json.loads((session / "status.json").read_text(encoding="utf-8"))
     assert status_payload["aspect_ratio"] == "9:16"
+
+
+def test_orchestrator_synthetic_e2e_with_burn_subtitles(tmp_path: Path, monkeypatch) -> None:
+    video = tmp_path / "synthetic.mp4"
+    _make_video(video)
+    session = tmp_path / "session"
+    profile = load_game_profile(PROFILE_PATH)
+
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.analyze_audio",
+        lambda path: {"has_audio": False, "segments": [], "average_intensity": 0.0, "peak_intensity": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.analyze_motion",
+        lambda path: {"samples": [], "peak_motion": 1.0, "average_motion": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.transcribe_audio",
+        lambda path: {
+            "has_audio": True,
+            "segments": [{"start": 0.4, "end": 1.1, "text": "nice headshot!"}],
+            "text": "nice headshot!",
+            "speech_reaction": 1.0,
+        },
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.detect_events",
+        lambda *args: [{
+            "id": "legacy-1", "event_type": "enemy_contact", "start_time": 0.5, "end_time": 1.0,
+            "highlight_score": 70.0, "context_score": 80.0, "confidence": 0.7, "intensity": 0.7,
+        }],
+    )
+
+    result = ProductionOrchestrator(profile=profile, vision_provider=None).run(
+        video, session_dir=session, max_clips=3, burn_subtitles=True,
+    )
+    assert result["status"] == "SUCCESS"
+    assert result["qc"]["passed"] is True
+    clip_srts = list(Path(result["output_dir"]).glob("clips/*.srt"))
+    assert clip_srts
+    assert "nice headshot!" in clip_srts[0].read_text(encoding="utf-8")
+    status_payload = json.loads((session / "status.json").read_text(encoding="utf-8"))
+    assert status_payload["burn_subtitles"] is True
 
 
 class OfflineVisionProvider(FakeVisionProvider):

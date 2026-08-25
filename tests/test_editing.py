@@ -66,3 +66,29 @@ def test_build_preview_rejects_unknown_aspect_ratio(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         build_preview(source, _timeline_for(3.0), output, aspect_ratio="4:3")
+
+
+def test_build_preview_burns_subtitles_and_writes_relative_srt(tmp_path: Path) -> None:
+    source = tmp_path / "source.mp4"
+    _make_source_video(source)
+    output = tmp_path / "preview.mp4"
+    transcript_segments = [{"start": 0.5, "end": 1.5, "text": "nice headshot!"}]
+
+    build_preview(source, _timeline_for(3.0), output, transcript_segments=transcript_segments)
+
+    assert output.exists()
+    srt_path = output.parent / "clips" / "clip_00.srt"
+    assert srt_path.exists()
+    assert "nice headshot!" in srt_path.read_text(encoding="utf-8")
+
+
+def test_build_preview_skips_srt_when_no_segments_overlap_clip(tmp_path: Path) -> None:
+    source = tmp_path / "source.mp4"
+    _make_source_video(source)
+    output = tmp_path / "preview.mp4"
+    transcript_segments = [{"start": 50.0, "end": 51.0, "text": "way outside the clip"}]
+
+    build_preview(source, _timeline_for(3.0), output, transcript_segments=transcript_segments)
+
+    assert output.exists()
+    assert not (output.parent / "clips" / "clip_00.srt").exists()

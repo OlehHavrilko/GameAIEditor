@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     edit_parser.add_argument(
         "--aspect", choices=sorted(ASPECT_RATIO_PRESETS), default=None, help="Output aspect ratio preset (default: source aspect)"
     )
+    edit_parser.add_argument("--subtitles", action="store_true", help="Burn in subtitles generated from the speech transcript")
 
     render_parser = subparsers.add_parser("render", help="Render the final MP4 from preview output")
     render_parser.add_argument("session", help="Path to a session directory")
@@ -93,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     all_parser.add_argument(
         "--aspect", choices=sorted(ASPECT_RATIO_PRESETS), default=None, help="Output aspect ratio preset (default: source aspect)"
     )
+    all_parser.add_argument("--subtitles", action="store_true", help="Burn in subtitles generated from the speech transcript")
 
     prefilter_parser = subparsers.add_parser("prefilter", help="Run cheap visual/audio candidate prefilter")
     prefilter_parser.add_argument("source", help="Path to the input video")
@@ -114,6 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument(
         "--aspect", choices=sorted(ASPECT_RATIO_PRESETS), default=None, help="Output aspect ratio preset (default: source aspect)"
     )
+    batch_parser.add_argument("--subtitles", action="store_true", help="Burn in subtitles generated from the speech transcript")
 
     event_parser = subparsers.add_parser("event-test", help="Convert one Vision result into Event Arcs")
     event_parser.add_argument("vision_result", help="Path to a Vision result.json")
@@ -151,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "edit":
-            result = edit_session(args.session, aspect_ratio=args.aspect)
+            result = edit_session(args.session, aspect_ratio=args.aspect, burn_subtitles=args.subtitles)
             LOGGER.info("Preview written: %s", result["preview"])
             return 0
 
@@ -243,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "all":
-            result = run_all_pipeline(args.source, profile_path=args.profile, aspect_ratio=args.aspect)
+            result = run_all_pipeline(args.source, profile_path=args.profile, aspect_ratio=args.aspect, burn_subtitles=args.subtitles)
             if result.get("status") == "NO_HIGHLIGHTS":
                 LOGGER.info("No significant highlights found. Session: %s", result["session_dir"])
             else:
@@ -263,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
                 final_dir=args.final_dir,
                 profile_path=args.profile,
                 aspect_ratio=args.aspect,
+                burn_subtitles=args.subtitles,
             )
             print(f"Found videos: {result['video_count']}")
             print(f"Total duration: {result['total_duration']:.3f}s")

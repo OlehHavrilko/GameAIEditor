@@ -106,7 +106,7 @@ def select_highlights_for_session(session_dir: str | Path, profile_path: str | P
     return selected
 
 
-def edit_session(session_dir: str | Path, *, aspect_ratio: str | None = None) -> dict[str, Any]:
+def edit_session(session_dir: str | Path, *, aspect_ratio: str | None = None, burn_subtitles: bool = False) -> dict[str, Any]:
     working_dir = Path(session_dir)
     metadata = _read_json(working_dir / "metadata.json")
     selection = _read_json(working_dir / "selection.json")
@@ -119,8 +119,14 @@ def edit_session(session_dir: str | Path, *, aspect_ratio: str | None = None) ->
     if not source_path:
         raise ValueError("Metadata does not include source_path for timeline editing.")
 
+    transcript_segments = None
+    if burn_subtitles:
+        transcript_path = working_dir / "transcript.json"
+        if transcript_path.exists():
+            transcript_segments = _read_json(transcript_path).get("segments")
+
     preview_path = working_dir / "preview.mp4"
-    build_preview(source_path, timeline, preview_path, aspect_ratio=aspect_ratio)
+    build_preview(source_path, timeline, preview_path, aspect_ratio=aspect_ratio, transcript_segments=transcript_segments)
     return {"timeline": timeline, "preview": str(preview_path)}
 
 
@@ -144,11 +150,15 @@ def qc_session(session_dir: str | Path) -> dict[str, Any]:
 
 
 def run_all_pipeline(
-    source_path: str | Path, profile_path: str | Path | None = None, *, aspect_ratio: str | None = None
+    source_path: str | Path,
+    profile_path: str | Path | None = None,
+    *,
+    aspect_ratio: str | None = None,
+    burn_subtitles: bool = False,
 ) -> dict[str, Any]:
     from game_ai_editor.orchestration.orchestrator import ProductionOrchestrator
 
     orchestrator = ProductionOrchestrator.from_profile_path(
         profile_path or Path("config/games/arma_reforger.json"),
     )
-    return orchestrator.run(source_path, aspect_ratio=aspect_ratio)
+    return orchestrator.run(source_path, aspect_ratio=aspect_ratio, burn_subtitles=burn_subtitles)
