@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 
 from game_ai_editor.config.loader import load_game_profile
 from game_ai_editor.orchestration.fusion import fuse_events, normalize_events
@@ -89,6 +91,24 @@ def test_configuration_fingerprint_changes_with_clip_count() -> None:
     assert first != second
 
 
+def test_configuration_fingerprint_changes_with_aspect_ratio() -> None:
+    profile = load_game_profile(PROFILE_PATH)
+    first = configuration_fingerprint(profile, max_clips=3, target_duration=None, aspect_ratio=None)
+    second = configuration_fingerprint(profile, max_clips=3, target_duration=None, aspect_ratio="9:16")
+    assert first != second
+
+
+def test_orchestrator_rejects_unsupported_aspect_ratio(tmp_path: Path) -> None:
+    video = tmp_path / "synthetic.mp4"
+    _make_video(video)
+    session = tmp_path / "session"
+    profile = load_game_profile(PROFILE_PATH)
+
+    orchestrator = ProductionOrchestrator(profile=profile, vision_provider=None)
+    with pytest.raises(ValueError):
+        orchestrator.run(video, session_dir=session, aspect_ratio="4:3")
+
+
 def test_orchestrator_cancellation_stops_before_pipeline_stage(tmp_path: Path) -> None:
     video = tmp_path / "synthetic.mp4"
     video.write_bytes(b"synthetic")
@@ -153,6 +173,51 @@ def test_orchestrator_synthetic_e2e_with_mock_vision(tmp_path: Path, monkeypatch
     assert (session / "output" / "qc.json").exists()
     status_payload = json.loads((session / "status.json").read_text(encoding="utf-8"))
     assert status_payload["stages"]["prefilter"]["status"] == "COMPLETE"
+
+
+def test_orchestrator_synthetic_e2e_with_aspect_ratio(tmp_path: Path, monkeypatch) -> None:
+    video = tmp_path / "synthetic.mp4"
+    _make_video(video)
+    session = tmp_path / "session"
+    profile = load_game_profile(PROFILE_PATH)
+
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.analyze_audio",
+        lambda path: {"has_audio": False, "segments": [], "average_intensity": 0.0, "peak_intensity": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.analyze_motion",
+        lambda path: {"samples": [], "peak_motion": 1.0, "average_motion": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.transcribe_audio",
+        lambda path: {"has_audio": False, "segments": [], "text": "", "speech_reaction": 0.0},
+    )
+    monkeypatch.setattr(
+        "game_ai_editor.orchestration.orchestrator.detect_events",
+        lambda *args: [{
+            "id": "legacy-1", "event_type": "enemy_contact", "start_time": 0.5, "end_time": 1.0,
+            "highlight_score": 70.0, "context_score": 80.0, "confidence": 0.7, "intensity": 0.7,
+        }],
+    )
+
+    result = ProductionOrchestrator(profile=profile, vision_provider=None).run(
+        video, session_dir=session, max_clips=3, aspect_ratio="9:16",
+    )
+    assert result["status"] == "SUCCESS"
+    assert result["qc"]["passed"] is True
+    from game_ai_editor.editing.ffmpeg_editor import ASPECT_RATIO_PRESETS
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", result["final_path"]],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    stream = json.loads(probe.stdout)["streams"][0]
+    assert (int(stream["width"]), int(stream["height"])) == ASPECT_RATIO_PRESETS["9:16"]
+    status_payload = json.loads((session / "status.json").read_text(encoding="utf-8"))
+    assert status_payload["aspect_ratio"] == "9:16"
 
 
 class OfflineVisionProvider(FakeVisionProvider):

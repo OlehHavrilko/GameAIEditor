@@ -78,11 +78,14 @@ def _serialize_for_fingerprint(value: Any) -> Any:
     return value
 
 
-def configuration_fingerprint(profile: Any, *, max_clips: int, target_duration: float | None) -> str:
+def configuration_fingerprint(
+    profile: Any, *, max_clips: int, target_duration: float | None, aspect_ratio: str | None = None
+) -> str:
     payload = {
         "profile": _serialize_for_fingerprint(profile),
         "max_clips": max_clips,
         "target_duration": target_duration,
+        "aspect_ratio": aspect_ratio,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

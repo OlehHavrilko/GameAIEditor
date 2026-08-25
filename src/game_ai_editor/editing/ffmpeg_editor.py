@@ -4,6 +4,25 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+# (width, height) output resolution for each supported platform aspect ratio.
+ASPECT_RATIO_PRESETS: dict[str, tuple[int, int]] = {
+    "16:9": (1920, 1080),
+    "9:16": (1080, 1920),
+    "1:1": (1080, 1080),
+}
+
+
+def _aspect_ratio_filter(aspect_ratio: str | None) -> str | None:
+    if aspect_ratio is None:
+        return None
+    preset = ASPECT_RATIO_PRESETS.get(aspect_ratio)
+    if preset is None:
+        raise ValueError(f"Unsupported aspect_ratio {aspect_ratio!r}; expected one of {sorted(ASPECT_RATIO_PRESETS)}")
+    width, height = preset
+    # Scale to fully cover the target frame, then center-crop the overflow -
+    # this fills 9:16/1:1 outputs without letterboxing or distorting the source.
+    return f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+
 
 def run_ffmpeg(command: list[str]) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -12,7 +31,13 @@ def run_ffmpeg(command: list[str]) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def build_preview(source_path: str | Path, timeline: list[dict[str, Any]], output_path: str | Path) -> Path:
+def build_preview(
+    source_path: str | Path,
+    timeline: list[dict[str, Any]],
+    output_path: str | Path,
+    *,
+    aspect_ratio: str | None = None,
+) -> Path:
     source = Path(source_path)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -21,6 +46,8 @@ def build_preview(source_path: str | Path, timeline: list[dict[str, Any]], outpu
 
     if not timeline:
         raise ValueError("Cannot render a timeline without selected segments.")
+
+    video_filter = _aspect_ratio_filter(aspect_ratio)
 
     clip_paths: list[Path] = []
     for index, segment in enumerate(timeline):
@@ -36,6 +63,10 @@ def build_preview(source_path: str | Path, timeline: list[dict[str, Any]], outpu
             str(end),
             "-i",
             str(source),
+        ]
+        if video_filter is not None:
+            command += ["-vf", video_filter]
+        command += [
             "-c:v",
             "libx264",
             "-preset",

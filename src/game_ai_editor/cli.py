@@ -7,6 +7,7 @@ from pathlib import Path
 
 from game_ai_editor.batch import run_batch
 from game_ai_editor.diagnostics import collect_system_diagnostics
+from game_ai_editor.editing.ffmpeg_editor import ASPECT_RATIO_PRESETS
 from game_ai_editor.events.vision_adapter import run_event_test
 from game_ai_editor.runtime import OllamaRuntimeManager
 from game_ai_editor.vision.poc import run_vision_test
@@ -49,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     edit_parser = subparsers.add_parser("edit", help="Create preview output from a selected timeline")
     edit_parser.add_argument("session", help="Path to a session directory")
+    edit_parser.add_argument(
+        "--aspect", choices=sorted(ASPECT_RATIO_PRESETS), default=None, help="Output aspect ratio preset (default: source aspect)"
+    )
 
     render_parser = subparsers.add_parser("render", help="Render the final MP4 from preview output")
     render_parser.add_argument("session", help="Path to a session directory")
@@ -86,6 +90,9 @@ def build_parser() -> argparse.ArgumentParser:
     all_parser = subparsers.add_parser("all", help="Run the full pipeline for a source video")
     all_parser.add_argument("source", help="Path to the input video")
     all_parser.add_argument("--profile", default=str(DEFAULT_PROFILE), help="Path to a custom game profile")
+    all_parser.add_argument(
+        "--aspect", choices=sorted(ASPECT_RATIO_PRESETS), default=None, help="Output aspect ratio preset (default: source aspect)"
+    )
 
     prefilter_parser = subparsers.add_parser("prefilter", help="Run cheap visual/audio candidate prefilter")
     prefilter_parser.add_argument("source", help="Path to the input video")
@@ -104,6 +111,9 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--resume", action="store_true", default=True, help="Reuse completed artifacts")
     batch_parser.add_argument("--final-dir", default="output", help="Legacy compatibility directory for finished montages; canonical production output is output/<project_id>/final.mp4")
     batch_parser.add_argument("--profile", default=str(DEFAULT_PROFILE), help="Path to a custom game profile")
+    batch_parser.add_argument(
+        "--aspect", choices=sorted(ASPECT_RATIO_PRESETS), default=None, help="Output aspect ratio preset (default: source aspect)"
+    )
 
     event_parser = subparsers.add_parser("event-test", help="Convert one Vision result into Event Arcs")
     event_parser.add_argument("vision_result", help="Path to a Vision result.json")
@@ -141,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "edit":
-            result = edit_session(args.session)
+            result = edit_session(args.session, aspect_ratio=args.aspect)
             LOGGER.info("Preview written: %s", result["preview"])
             return 0
 
@@ -233,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "all":
-            result = run_all_pipeline(args.source, profile_path=args.profile)
+            result = run_all_pipeline(args.source, profile_path=args.profile, aspect_ratio=args.aspect)
             if result.get("status") == "NO_HIGHLIGHTS":
                 LOGGER.info("No significant highlights found. Session: %s", result["session_dir"])
             else:
@@ -252,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
                 resume=args.resume,
                 final_dir=args.final_dir,
                 profile_path=args.profile,
+                aspect_ratio=args.aspect,
             )
             print(f"Found videos: {result['video_count']}")
             print(f"Total duration: {result['total_duration']:.3f}s")

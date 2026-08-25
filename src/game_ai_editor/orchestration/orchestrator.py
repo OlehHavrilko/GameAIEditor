@@ -13,7 +13,7 @@ from typing import Any, cast
 from game_ai_editor.analysis.motion import analyze_motion
 from game_ai_editor.audio.analysis import analyze_audio
 from game_ai_editor.config.loader import load_game_profile
-from game_ai_editor.editing.ffmpeg_editor import build_preview, render_final
+from game_ai_editor.editing.ffmpeg_editor import ASPECT_RATIO_PRESETS, build_preview, render_final
 from game_ai_editor.events.arcs import build_event_arcs
 from game_ai_editor.events.detector import detect_events
 from game_ai_editor.events.vision_adapter import vision_result_to_events
@@ -321,19 +321,24 @@ class ProductionOrchestrator:
         session_dir: str | Path | None = None,
         max_clips: int = 5,
         target_duration: float | None = None,
+        aspect_ratio: str | None = None,
     ) -> dict[str, Any]:
         source = Path(video).resolve()
         if not source.exists():
             raise FileNotFoundError(f"Input video not found: {source}")
         if max_clips < 1:
             raise ValueError("max_clips must be at least 1")
+        if aspect_ratio is not None and aspect_ratio not in ASPECT_RATIO_PRESETS:
+            raise ValueError(f"Unsupported aspect_ratio {aspect_ratio!r}; expected one of {sorted(ASPECT_RATIO_PRESETS)}")
         session = self._session_dir(source, session_dir)
         project_id = project_id_from_source(source)
         public_output_dir = ensure_project_output_dir(project_id)
         preview_output_path = public_output_dir / "preview.mp4"
         final_output_path = public_output_dir / "final.mp4"
         identity = source_identity(source)
-        fingerprint = configuration_fingerprint(self.profile, max_clips=max_clips, target_duration=target_duration)
+        fingerprint = configuration_fingerprint(
+            self.profile, max_clips=max_clips, target_duration=target_duration, aspect_ratio=aspect_ratio
+        )
         existing_status = session / "status.json"
         if self.resume and existing_status.exists():
             existing = _read_json(existing_status)
@@ -353,6 +358,7 @@ class ProductionOrchestrator:
             final_output_path=str(final_output_path),
             preview_output_path=str(preview_output_path),
             output_directory=str(public_output_dir),
+            aspect_ratio=aspect_ratio,
             stages=existing_payload.get("stages") or {stage: {"status": status} for stage, status in initial_stage_statuses().items()},
             vision={
                 "enabled": self.vision_provider is not None,
@@ -555,7 +561,7 @@ class ProductionOrchestrator:
             temporary_preview.unlink(missing_ok=True)
             temporary_final.unlink(missing_ok=True)
             try:
-                build_preview(source, timeline, temporary_preview)
+                build_preview(source, timeline, temporary_preview, aspect_ratio=aspect_ratio)
                 render_final(temporary_preview, temporary_final)
             except Exception:
                 temporary_preview.unlink(missing_ok=True)
@@ -625,9 +631,20 @@ class ProductionOrchestrator:
             "qc": qc,
         }
 
-    def rerender_selection(self, video: str | Path, session_dir: str | Path, selected: list[dict[str, Any]]) -> dict[str, Any]:
+    def rerender_selection(
+        self,
+        video: str | Path,
+        session_dir: str | Path,
+        selected: list[dict[str, Any]],
+        *,
+        aspect_ratio: str | None = None,
+    ) -> dict[str, Any]:
         source = Path(video).resolve()
         session = Path(session_dir)
+        if aspect_ratio is None:
+            status_path = session / "status.json"
+            if status_path.exists():
+                aspect_ratio = _read_json(status_path).get("aspect_ratio")
         project_id = project_id_from_source(source)
         public_output_dir = ensure_project_output_dir(project_id)
         public_preview_path = public_output_dir / "preview.mp4"
@@ -666,7 +683,7 @@ class ProductionOrchestrator:
         temporary_preview.unlink(missing_ok=True)
         temporary_final.unlink(missing_ok=True)
         try:
-            preview = build_preview(source, timeline, temporary_preview)
+            preview = build_preview(source, timeline, temporary_preview, aspect_ratio=aspect_ratio)
             final = render_final(preview, temporary_final)
             qc = run_qc(
                 temporary_preview,
