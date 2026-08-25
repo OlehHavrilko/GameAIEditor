@@ -59,4 +59,7 @@ def test_resume_partial_session(tmp_path: Path, monkeypatch, completed_stage: st
 
     payload = json.loads((session / "status.json").read_text(encoding="utf-8"))
     assert payload["status"] in {"SUCCESS", "QC_FAILED"}
-    assert payload["stages"][completed_stage]["status"] == "COMPLETE"
+    # Without a vision provider, prefilter has nothing to feed and is skipped
+    # outright rather than run (see orchestrator.run's vision_provider gate).
+    expected_status = "SKIPPED" if completed_stage == "prefilter" else "COMPLETE"
+    assert payload["stages"][completed_stage]["status"] == expected_status

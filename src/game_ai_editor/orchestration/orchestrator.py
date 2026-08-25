@@ -372,14 +372,21 @@ class ProductionOrchestrator:
         write_json(session / "metadata.json", {**metadata.model_dump(), "source_identity": identity.__dict__})
         duration = float(metadata.duration or 0.0)
 
-        prefilter = self._stage_cached(
-            session,
-            "prefilter",
-            session / "prefilter" / "candidates.json",
-            _load_prefilter,
-            lambda: run_prefilter(source, output_dir=session / "prefilter"),
-        )
-        write_json(session / "prefilter" / "candidates.json", prefilter)
+        if self.vision_provider is not None:
+            prefilter = self._stage_cached(
+                session,
+                "prefilter",
+                session / "prefilter" / "candidates.json",
+                _load_prefilter,
+                lambda: run_prefilter(source, output_dir=session / "prefilter"),
+            )
+            write_json(session / "prefilter" / "candidates.json", prefilter)
+        else:
+            # Prefilter output only feeds vision-window selection (see the
+            # vision_enabled branch below) - skip the extra ffmpeg decode+RMS
+            # pass entirely when there is no vision provider to consume it.
+            prefilter = {"candidates": [], "windows": []}
+            self._set_stage_state(session, "prefilter", StageStatus.SKIPPED, mode="DISABLED", error_code="VISION_DISABLED")
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             audio_future = executor.submit(

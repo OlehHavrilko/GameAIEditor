@@ -151,6 +151,8 @@ def test_orchestrator_synthetic_e2e_with_mock_vision(tmp_path: Path, monkeypatch
     assert result["qc"]["passed"] is True
     assert (session / "vision" / "window_000001.json").exists()
     assert (session / "output" / "qc.json").exists()
+    status_payload = json.loads((session / "status.json").read_text(encoding="utf-8"))
+    assert status_payload["stages"]["prefilter"]["status"] == "COMPLETE"
 
 
 class OfflineVisionProvider(FakeVisionProvider):
