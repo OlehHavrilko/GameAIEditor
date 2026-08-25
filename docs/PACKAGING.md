@@ -16,7 +16,7 @@ dist\game_ai_editor\game_ai_editor.exe system-status
 dist\game_ai_editor\game_ai_editor.exe runtime-status
 ```
 
-Expected size is roughly 900 MB–1 GB because of torch, faster-whisper, opencv and PySide6. The spec already excludes pytest, test internals, unused torchvision datasets/models and several dev-only packages; post-build cleanup removes debug symbols.
+Size is driven mainly by faster-whisper/CTranslate2, OpenCV and PySide6. torch is a fully optional dependency (only used by the GPU diagnostics readout) and is excluded from the build entirely, along with pytest, test internals and several other dev-only packages, so the bundle is well under the ~900 MB-1 GB figure torch alone used to add; post-build cleanup removes debug symbols.
 
 For a final GUI-only release change `console=True` to `console=False` in `packaging/game_ai_editor.spec` and rebuild; this hides the console window when the desktop app starts, but CLI output may not be visible.
 

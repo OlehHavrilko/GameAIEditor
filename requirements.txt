@@ -2,6 +2,8 @@ pydantic>=2.7.4
 numpy>=1.26.4
 opencv-python>=4.10.0
 faster-whisper>=1.0.1
-torch>=2.6.0
 PySide6>=6.7.0
 pytest>=8.3.0
+# torch is optional - only used by diagnostics.py's GPU readout, which
+# already handles it being absent. Install separately if you want that
+# check: pip install torch>=2.6.0 (or `pip install -e .[gpu-diagnostics]`)
