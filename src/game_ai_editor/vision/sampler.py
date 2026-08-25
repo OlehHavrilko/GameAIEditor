@@ -4,7 +4,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image  # type: ignore[import-not-found]
 from pydantic import BaseModel, Field
 
 

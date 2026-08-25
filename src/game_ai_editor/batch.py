@@ -51,7 +51,7 @@ def _is_hidden(path: Path) -> bool:
     try:
         import ctypes
 
-        attributes = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+        attributes = ctypes.windll.kernel32.GetFileAttributesW(str(path))  # type: ignore[attr-defined]
         return attributes != -1 and bool(attributes & 0x2)
     except (AttributeError, OSError):
         return False
