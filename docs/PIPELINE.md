@@ -44,15 +44,15 @@ Legacy `finalvids/` remains deprecated and is retained only as compatibility sto
 
 ```text
 metadata
-  -> prefilter
-  -> audio / motion / transcription / VisionProvider
+  -> prefilter (skipped entirely when no VisionProvider is configured)
+  -> audio / motion / transcription (concurrent) / VisionProvider (if enabled)
   -> normalized events
   -> fused events
   -> EventArc
   -> scoring
   -> selection
   -> timeline
-  -> FFmpeg render -> output/<project_id>/final.mp4
+  -> FFmpeg render (aspect ratio preset + subtitle burn-in optional) -> output/<project_id>/final.mp4
   -> QC
 ```
 

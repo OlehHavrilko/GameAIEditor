@@ -6,13 +6,26 @@
 
 Инструмент для поиска и монтажа лучших моментов из игровых видео, полностью локальный и работающий из коробки без AI-провайдера: motion/audio/speech-сигналы и классификация событий по ключевым словам транскрипта уже дают полноценный результат. Ollama Vision — опциональный, выключенный по умолчанию слой для более тонкого разбора сцен; включать его не обязательно. Первый game profile — **Arma Reforger**, а pipeline не содержит game-specific orchestration.
 
-Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества. Первый game profile — **Arma Reforger**.
+Программа анализирует видео, находит интересные моменты, оценивает их, собирает таймлайн, рендерит MP4 и запускает проверки качества.
+
+## Производительность
+
+Анализ 10-минутного геймплейного ролика (720p) выполняется целиком за секунды, а не за минуты:
+
+| Стадия | Раньше | Сейчас |
+|---|---|---|
+| Motion-анализ | покадровый decode через OpenCV, ~22.5 сек | один проход ffmpeg с downscale, ~3.2 сек |
+| Audio + motion + transcription | последовательно, ~26.8 сек | параллельно (ThreadPoolExecutor), ~4 сек |
+| Prefilter | всегда выполнялся | пропускается полностью, если Vision выключен |
+| **Весь пайплайн end-to-end** | — | **~10 сек** |
 
 ## Как это работает
 
 ```text
 video -> metadata -> [prefilter + Vision, опционально] -> signals (motion/audio/speech, параллельно) -> fusion -> Event Arc -> scoring -> selection -> timeline -> MP4 -> QC
 ```
+
+Классификация типа события (headshot, multi_kill, ambush, squad_coordination и т.д.) определяется по ключевым словам в транскрипте речи/рации плюс motion/audio-эвристике — без обращения к AI. Vision, если включён, дополняет эту классификацию, а не заменяет её.
 
 Проект использует:
 
@@ -32,7 +45,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-FFmpeg и FFprobe должны быть доступны в `PATH`.
+FFmpeg и FFprobe должны быть доступны в `PATH`. `torch` — опциональная зависимость (нужна только для GPU-диагностики в desktop-приложении, не для самого пайплайна); ставится отдельно через `pip install -e ".[gpu-diagnostics]"`, если нужна.
 
 ## Основные команды
 
@@ -41,8 +54,6 @@ Desktop application:
 ```powershell
 game-ai-editor desktop
 ```
-
-Единый production pipeline:
 
 Можно запускать этапы отдельно:
 
@@ -58,10 +69,12 @@ game-ai-editor qc work\video_session
 Запуск полного пайплайна:
 
 ```powershell
-game-ai-editor all input\video.mp4
+game-ai-editor all input\video.mp4 --aspect 9:16 --subtitles
 ```
 
-`all` и `batch` используют `ProductionOrchestrator`. При включённом Vision он анализирует только окна, прошедшие prefilter. Пустой результат получает статус `NO_HIGHLIGHTS`, fake video не создаётся.
+`--aspect` (`16:9`/`9:16`/`1:1`, по умолчанию — формат исходника) и `--subtitles` (burn-in субтитров из транскрипта) доступны в `all`, `edit` и `batch`.
+
+`all` и `batch` используют `ProductionOrchestrator`. При включённом Vision он анализирует только окна, прошедшие prefilter; при выключенном (по умолчанию) сама стадия prefilter не запускается. Пустой результат получает статус `NO_HIGHLIGHTS`, fake video не создаётся.
 
 Другие полезные команды:
 
@@ -96,6 +109,8 @@ Ollama и LM Studio не отправляют кадры в интернет. Д
 - `finalvids/` - legacy/deprecated compatibility directory, не использовать для новых production paths;
 - `tests/` - автоматические тесты.
 
+Расположение `input/`/`work/`/`output/` резолвится через `game_ai_editor.paths.data_root()`: в dev-режиме это корень репозитория, в собранном Windows-инсталляторе — папка рядом с exe, а desktop-приложение может переопределить его на выбранную пользователем директорию.
+
 Canonical production output:
 
 ```text
@@ -114,13 +129,14 @@ output/<project_id>/preview.mp4
 Уже реализовано:
 
 - получение метаданных и анализ аудио;
-- анализ движения и поиск событий-кандидатов;
+- анализ движения (ffmpeg-based) и поиск событий-кандидатов, включая keyword-классификацию по транскрипту (headshot, multi_kill, ambush, squad_coordination и другие типы сверх базовой motion-эвристики);
 - распознавание речи;
+- параллельная обработка audio/motion/transcription стадий;
 - оценка и выбор лучших моментов;
-- построение таймлайна и preview/render через FFmpeg;
+- построение таймлайна и preview/render через FFmpeg, с опциональными пресетами формата (16:9/9:16/1:1) и burn-in субтитров;
 - пакетная обработка видео и продолжение незавершённых запусков;
 - отдельные тесты и сканирование через Ollama Vision;
-- автоматические тесты основного пайплайна и vision-модулей.
+- автоматические тесты основного пайплайна и vision-модулей;
 - synthetic orchestrator E2E с mock Vision и реальным FFmpeg/QC.
 
 Дополнительно реализованы:
@@ -132,7 +148,9 @@ output/<project_id>/preview.mp4
 - structured error UX и degraded Vision mode;
 - PyInstaller one-directory packaging для Windows.
 
-Ограничения текущей версии: коммерческий installer/updater, сложные эффекты, полноценная non-linear редактура, дополнительные game profiles и optional downloadable ML components требуют следующих этапов.
+Сознательно отложено: музыкальная дорожка и intro/outro — ждут отдельной фичи-библиотеки ассетов (по аналогии с CapCut), а не auto-mixing произвольных файлов.
+
+Ограничения текущей версии: коммерческий installer/updater, сложные эффекты, полноценная non-linear редактура, дополнительные game profiles требуют следующих этапов.
 
 ## Проверка
 
@@ -157,7 +175,7 @@ output/<project_id>/preview.mp4
 ## Документация
 
 - [Architecture](ARCHITECTURE.md)
-- [Development guide](DEVELOPMENT.md)
+- [Development guide](docs/DEVELOPMENT.md)
 - [Production pipeline](docs/PIPELINE.md)
 - [AI providers](docs/AI_PROVIDERS.md)
 - [Packaging](docs/PACKAGING.md)

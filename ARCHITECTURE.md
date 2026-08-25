@@ -19,12 +19,13 @@ Game AI Editor is a local, CLI-driven engineering project for creating professio
 CLI / desktop / batch
   -> ProductionOrchestrator
   -> Media metadata
-  -> Fast prefilter
-  -> Audio + motion + transcription + VisionProvider
-  -> Event normalization and fusion
+  -> Fast prefilter (skipped entirely when no VisionProvider is configured)
+  -> Audio + motion + transcription, run concurrently; VisionProvider only if enabled
+  -> Event normalization and fusion (motion/audio/speech keyword classification is
+     already sufficient for narrative event typing; Vision only adds more)
   -> Event Arc
   -> Existing scoring / selection / timeline
-  -> Existing FFmpeg renderer
+  -> Existing FFmpeg renderer (aspect ratio preset + subtitle burn-in optional)
   -> Existing QC
 ```
 
@@ -84,7 +85,7 @@ Audio normalization, loudness balancing, impact enhancement, ducking, and cleanu
 
 ### src/game_ai_editor/subtitles
 
-Subtitle generation using transcription data and optional OCR/visual hints. Keeps style readable and non-intrusive.
+Generates SRT captions from the transcript for each rendered clip's own window and re-times them relative to that clip, then burns them in via FFmpeg with a readable, non-intrusive default style.
 
 ### src/game_ai_editor/qc
 
@@ -153,17 +154,19 @@ The current profile is `config/games/arma_reforger.json`.
 
 ## 8. Editing rules foundation
 
-The architecture defines editing behavior in a config-driven manner:
+Game profiles declare per-event `editing_rules` (hard cut by default; punch-in for
+kills; slow motion for important kills; speed ramp for multi-kills; shake for
+explosions; and so on) as contextual recommendations, not uniform behavior.
+This schema exists in `config/games/arma_reforger.json` but is not yet consumed
+by the renderer - it is groundwork for future per-event transitions/effects.
 
-- default action: hard cut;
-- kill: subtle punch-in + optional impact;
-- important kill: short slow motion + punch-in + impact;
-- multi-kill: speed ramp + faster cuts;
-- explosion: subtle shake + timing hit;
-- funny moment: subtitle + optional freeze frame;
-- cinematic moment: minimal effects to preserve tension.
+What the renderer (`editing/ffmpeg_editor.py`) actually applies today:
 
-These rules should not be applied uniformly; they are contextual recommendations that depend on scene score and confidence.
+- output aspect ratio presets (16:9 / 9:16 / 1:1 - scale-to-cover + center-crop);
+- subtitle burn-in from the transcript, timed per rendered clip.
+
+Music tracks and intro/outro are deliberately deferred until there is a proper
+asset library feature (pick from a curated set, not auto-mixing arbitrary files).
 
 ## 9. Quality gates
 
