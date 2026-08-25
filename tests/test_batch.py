@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -41,22 +42,31 @@ def test_video_id_and_manifest_resume(monkeypatch, tmp_path: Path) -> None:
     video.write_bytes(b"video")
     monkeypatch.setattr("game_ai_editor.batch.probe_media", _fake_metadata)
 
-    first = build_batch_manifest(tmp_path, work_root=tmp_path / "work", dry_run=True)
-    entry = first["videos"][0]
-    assert first["video_count"] == 1
-    assert first["total_duration"] == 12.5
-    assert entry["next_stage"] == "prefilter"
-    assert Path(first["manifest_path"]).exists()
+    # video_id is a hash of the video's absolute path, but session_dir is canonical
+    # (work/sessions/<video_id>, not scoped under tmp_path/work_root). pytest reuses
+    # physical tmp_path roots after a handful of runs, so without cleanup this test
+    # can collide with its own leftovers from an earlier invocation.
+    session_dir: Path | None = None
+    try:
+        first = build_batch_manifest(tmp_path, work_root=tmp_path / "work", dry_run=True)
+        entry = first["videos"][0]
+        session_dir = Path(entry["session_dir"])
+        assert first["video_count"] == 1
+        assert first["total_duration"] == 12.5
+        assert entry["next_stage"] == "prefilter"
+        assert Path(first["manifest_path"]).exists()
 
-    session_dir = Path(entry["session_dir"])
-    prefilter_path = session_dir / "prefilter" / "candidates.json"
-    prefilter_path.parent.mkdir(parents=True)
-    prefilter_path.write_text("{}", encoding="utf-8")
+        prefilter_path = session_dir / "prefilter" / "candidates.json"
+        prefilter_path.parent.mkdir(parents=True)
+        prefilter_path.write_text("{}", encoding="utf-8")
 
-    second = build_batch_manifest(tmp_path, work_root=tmp_path / "work", dry_run=True)
-    assert second["batch_id"] == first["batch_id"]
-    assert second["videos"][0]["next_stage"] == "vision"
-    assert second["videos"][0]["stages"]["prefilter"] == "completed"
+        second = build_batch_manifest(tmp_path, work_root=tmp_path / "work", dry_run=True)
+        assert second["batch_id"] == first["batch_id"]
+        assert second["videos"][0]["next_stage"] == "vision"
+        assert second["videos"][0]["stages"]["prefilter"] == "completed"
+    finally:
+        if session_dir is not None:
+            shutil.rmtree(session_dir, ignore_errors=True)
 
 
 def test_stage_progression() -> None:

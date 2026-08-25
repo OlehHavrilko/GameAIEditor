@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -98,6 +100,7 @@ class ProductionOrchestrator:
         self.progress = progress
         self.cancellation_requested = cancellation_requested
         self.resume = resume
+        self._status_lock = threading.Lock()
 
     @classmethod
     def from_profile_path(
@@ -121,33 +124,35 @@ class ProductionOrchestrator:
 
     def _status(self, session_dir: Path, **values: Any) -> None:
         path = session_dir / "status.json"
-        payload = _read_json(path) if path.exists() else {}
-        payload.update(values)
-        payload["updated_at"] = utc_now()
-        write_json(path, payload)
+        with self._status_lock:
+            payload = _read_json(path) if path.exists() else {}
+            payload.update(values)
+            payload["updated_at"] = utc_now()
+            write_json(path, payload)
 
     def _set_stage_state(self, session_dir: Path, stage: str, status: StageStatus | str, **details: Any) -> None:
         path = session_dir / "status.json"
-        payload = _read_json(path) if path.exists() else {}
-        stages = payload.setdefault("stages", {name: {"status": str(StageStatus.NOT_STARTED)} for name in STAGES})
-        stage_payload = stages.setdefault(stage, {"status": str(StageStatus.NOT_STARTED)})
-        now = utc_now()
-        if str(status) == str(StageStatus.RUNNING) and not stage_payload.get("started_at"):
-            stage_payload["started_at"] = now
-        stage_payload.update(details)
-        stage_payload["status"] = str(status)
-        stage_payload["updated_at"] = now
-        if str(status) in {str(StageStatus.COMPLETE), str(StageStatus.FAILED), str(StageStatus.SKIPPED)}:
-            stage_payload["completed_at"] = now
-        payload["stages"] = stages
-        payload["updated_at"] = now
-        payload["current_stage"] = stage
-        completed = sum(
-            str(item.get("status")) in {str(StageStatus.COMPLETE), str(StageStatus.SKIPPED)}
-            for item in stages.values()
-        )
-        payload["overall_progress"] = round(100.0 * completed / max(1, len(STAGES)), 1)
-        write_json(path, payload)
+        with self._status_lock:
+            payload = _read_json(path) if path.exists() else {}
+            stages = payload.setdefault("stages", {name: {"status": str(StageStatus.NOT_STARTED)} for name in STAGES})
+            stage_payload = stages.setdefault(stage, {"status": str(StageStatus.NOT_STARTED)})
+            now = utc_now()
+            if str(status) == str(StageStatus.RUNNING) and not stage_payload.get("started_at"):
+                stage_payload["started_at"] = now
+            stage_payload.update(details)
+            stage_payload["status"] = str(status)
+            stage_payload["updated_at"] = now
+            if str(status) in {str(StageStatus.COMPLETE), str(StageStatus.FAILED), str(StageStatus.SKIPPED)}:
+                stage_payload["completed_at"] = now
+            payload["stages"] = stages
+            payload["updated_at"] = now
+            payload["current_stage"] = stage
+            completed = sum(
+                str(item.get("status")) in {str(StageStatus.COMPLETE), str(StageStatus.SKIPPED)}
+                for item in stages.values()
+            )
+            payload["overall_progress"] = round(100.0 * completed / max(1, len(STAGES)), 1)
+            write_json(path, payload)
 
     def _stage(self, session_dir: Path, stage: str, action: Callable[[], Any]) -> Any:
         self._emit(stage, "START")
@@ -376,15 +381,24 @@ class ProductionOrchestrator:
         )
         write_json(session / "prefilter" / "candidates.json", prefilter)
 
-        audio = self._stage_cached(
-            session, "audio", session / "signals" / "audio.json", _load_artifact, lambda: analyze_audio(source)
-        )
-        motion = self._stage_cached(
-            session, "motion", session / "signals" / "motion.json", _load_artifact, lambda: analyze_motion(source)
-        )
-        transcript = self._stage_cached(
-            session, "transcription", session / "signals" / "transcript.json", _load_artifact, lambda: transcribe_audio(source)
-        )
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            audio_future = executor.submit(
+                self._stage_cached, session, "audio", session / "signals" / "audio.json", _load_artifact, lambda: analyze_audio(source)
+            )
+            motion_future = executor.submit(
+                self._stage_cached, session, "motion", session / "signals" / "motion.json", _load_artifact, lambda: analyze_motion(source)
+            )
+            transcript_future = executor.submit(
+                self._stage_cached,
+                session,
+                "transcription",
+                session / "signals" / "transcript.json",
+                _load_artifact,
+                lambda: transcribe_audio(source),
+            )
+            audio = audio_future.result()
+            motion = motion_future.result()
+            transcript = transcript_future.result()
         legacy_events = detect_events(metadata, audio, motion, transcript, self.profile)
         write_json(session / "signals" / "audio.json", audio)
         write_json(session / "signals" / "motion.json", motion)
