@@ -3,6 +3,43 @@ from __future__ import annotations
 import math
 from typing import Any
 
+# Ordered by specificity: the first matching category wins, so put phrases that
+# imply a narrower/rarer event before generic ones that could also match them.
+_EVENT_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "headshot": ("headshot", "head shot", "wallbang", "boom headshot"),
+    "multi_kill": ("double kill", "triple kill", "quad kill", "wiped the squad", "wiped them", "cleared them all", "killed them all"),
+    "vehicle_destruction": ("vehicle destroyed", "tank down", "tank is down", "apc down", "chopper down", "heli down", "blew up the tank", "vehicle down"),
+    "ambush": ("ambush", "ambushed", "they flanked", "flanking us", "we're flanked", "contact left", "contact right", "contact rear"),
+    "objective_capture": ("objective secured", "objective captured", "objective complete", "point is ours", "flag is ours", "capped the point", "capturing the objective"),
+    "near_death_escape": ("almost died", "nearly died", "that was close", "barely made it", "close call", "almost got me"),
+    "squad_coordination": ("cover me", "flank left", "flank right", "go go go", "regroup", "fall back", "on your six", "moving up", "push push"),
+    "funny_voice_communication": ("lmao", "lol", "haha", "hahaha", "bruh", "what the hell was that"),
+    "unusual_battlefield_event": ("what is that", "what the hell is happening", "glitch", "no way", "did you see that"),
+}
+
+
+def _window_text(transcript_segments: list[dict[str, Any]], start_time: float, end_time: float, context_window: float) -> str:
+    lo = start_time - context_window
+    hi = end_time + context_window
+    parts = []
+    for segment in transcript_segments:
+        seg_start = float(segment.get("start", 0.0))
+        seg_end = float(segment.get("end", 0.0))
+        if seg_end >= lo and seg_start <= hi:
+            parts.append(str(segment.get("text", "")).lower())
+    return " ".join(parts)
+
+
+def _classify_by_keywords(text: str) -> str | None:
+    if not text:
+        return None
+    for event_type, keywords in _EVENT_KEYWORDS.items():
+        if any(keyword in text for keyword in keywords):
+            return event_type
+    if text.count("kill") >= 2:
+        return "multi_kill"
+    return None
+
 
 def _sample_at_time(samples: list[dict[str, Any]], target_time: float, field_name: str = "score") -> float:
     if not samples:
@@ -79,6 +116,7 @@ def detect_events(metadata: Any, audio_summary: dict[str, Any], motion_summary: 
 
     clusters = _cluster_segments(signal_samples, duration, narrative_threshold)
     events: list[dict[str, Any]] = []
+    context_window = float(profile.narrative_signals.get("context_window_seconds", 6.0))
 
     for index, cluster in enumerate(clusters):
         start_time = float(cluster.get("start", 0.0))
@@ -117,6 +155,11 @@ def detect_events(metadata: Any, audio_summary: dict[str, Any], motion_summary: 
         else:
             event_type = "enemy_contact"
 
+        window_text = _window_text(transcript_segments, start_time, end_time, context_window)
+        keyword_type = _classify_by_keywords(window_text)
+        if keyword_type and keyword_type in interesting and keyword_type not in ignored:
+            event_type = keyword_type
+
         if event_type in ignored or event_type not in interesting:
             if event_type in ignored:
                 continue
@@ -141,7 +184,7 @@ def detect_events(metadata: Any, audio_summary: dict[str, Any], motion_summary: 
             "rarity": round(min(1.0, 0.4 + intensity * 0.6), 3),
             "novelty": round(min(1.0, 0.2 + intensity * 0.8), 3),
             "tags": [event_type],
-            "kill_count": 1 if event_type in {"kill", "multi_kill", "headshot"} else 0,
+            "kill_count": max(2, window_text.count("kill")) if event_type == "multi_kill" else (1 if event_type in {"kill", "headshot"} else 0),
             "score": 0.0,
         }
         events.append(event)
