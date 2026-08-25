@@ -19,6 +19,7 @@ from game_ai_editor.orchestration.state import (
     stage_status as orchestration_stage_status,
 )
 from game_ai_editor.orchestration.state import write_json
+from game_ai_editor.paths import data_root
 from game_ai_editor.vision.models import VisionRequest
 from game_ai_editor.vision.ollama import (
     OllamaModelError,
@@ -128,12 +129,12 @@ def next_pending_stage(stages: dict[str, str]) -> str | None:
 def build_batch_manifest(
     input_directory: str | Path,
     *,
-    work_root: str | Path = "work/batch",
+    work_root: str | Path | None = None,
     dry_run: bool = True,
 ) -> dict[str, Any]:
     root = Path(input_directory)
     videos = discover_videos(root)
-    work_path = Path(work_root)
+    work_path = Path(work_root) if work_root is not None else data_root() / "work" / "batch"
     existing = _manifest_paths(work_path, root)
     if existing:
         manifest_path = existing[0]
@@ -150,7 +151,7 @@ def build_batch_manifest(
     total_duration = 0.0
     for video_path in videos:
         video_id = _safe_video_id(video_path)
-        session_dir = Path("work") / "sessions" / video_id
+        session_dir = data_root() / "work" / "sessions" / video_id
         session_dir.mkdir(parents=True, exist_ok=True)
         metadata = probe_media(video_path)
         duration = float(metadata.duration or 0.0)
@@ -190,7 +191,7 @@ def run_batch(
     input_directory: str | Path,
     *,
     dry_run: bool = False,
-    work_root: str | Path = "work/batch",
+    work_root: str | Path | None = None,
     clips: int = 10,
     window_size: float = 15.0,
     prefilter_threshold: float = 0.4,

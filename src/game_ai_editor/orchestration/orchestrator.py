@@ -18,6 +18,7 @@ from game_ai_editor.events.arcs import build_event_arcs
 from game_ai_editor.events.detector import detect_events
 from game_ai_editor.events.vision_adapter import vision_result_to_events
 from game_ai_editor.media.metadata import MediaMetadata, probe_media
+from game_ai_editor.paths import data_root
 from game_ai_editor.qc.checks import run_qc
 from game_ai_editor.scoring.score import score_candidates
 from game_ai_editor.selection.selector import select_highlights
@@ -251,7 +252,7 @@ class ProductionOrchestrator:
         if session_dir is not None:
             target = Path(session_dir)
         else:
-            target = Path("work") / "sessions" / project_id_from_source(video)
+            target = data_root() / "work" / "sessions" / project_id_from_source(video)
         target.mkdir(parents=True, exist_ok=True)
         return target
 

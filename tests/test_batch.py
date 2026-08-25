@@ -134,4 +134,4 @@ def test_batch_uses_canonical_sessions_and_outputs_for_mixed_results(monkeypatch
     assert not (video2_output / "final.mp4").exists()
     assert not (tmp_path / "legacy").exists()
     for video in result["videos"]:
-        assert Path(video["session_dir"]).as_posix().replace("\\", "/").startswith("work/sessions/")
+        assert "/work/sessions/" in Path(video["session_dir"]).as_posix()

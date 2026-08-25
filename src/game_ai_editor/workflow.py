@@ -11,6 +11,7 @@ from game_ai_editor.config.loader import load_game_profile
 from game_ai_editor.editing.ffmpeg_editor import build_preview, render_final
 from game_ai_editor.events.detector import detect_events
 from game_ai_editor.media.metadata import probe_media
+from game_ai_editor.paths import data_root
 from game_ai_editor.qc.checks import run_qc
 from game_ai_editor.scoring.score import score_candidates
 from game_ai_editor.selection.selector import select_highlights
@@ -49,7 +50,7 @@ def _read_json(path: Path) -> Any:
 
 def create_session_dir(source_path: str | Path, work_root: str | Path | None = None) -> Path:
     source = Path(source_path)
-    root = Path(work_root) if work_root is not None else Path("work")
+    root = Path(work_root) if work_root is not None else data_root() / "work"
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     session_name = f"{source.stem.replace(' ', '_')}_{timestamp}"
     session_dir = root / session_name

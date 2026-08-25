@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from game_ai_editor.paths import data_root
 
 
 def _normalize_project_id(value: str | Path) -> str:
@@ -48,7 +48,7 @@ def canonical_relative_preview_output_path(project_id: str | Path) -> str:
 
 
 def canonical_output_root(project_id: str | Path) -> Path:
-    return REPO_ROOT / Path(canonical_relative_output_dir(project_id))
+    return data_root() / Path(canonical_relative_output_dir(project_id))
 
 
 def ensure_project_output_dir(project_id: str | Path) -> Path:
